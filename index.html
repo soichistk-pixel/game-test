@@ -1150,10 +1150,10 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
   // 通常曲はラボの結果そのまま。フィーバーは同じ曲を速く、ボスは進行とメロディを変えた別アレンジ
   const bgm = (() => {
     const VOL = 0.6;
-    const NORMAL = { bpm: 156, mode: 'minor', prog: 1, drum: 'four', bass: 'octave', lead: 'p25', dens: 'busy', arp: 'chord', echo: 0.3, bright: 0.55, bassVol: 0.3, leadVol: 0.8, swing: 0.04, seed: 43381 };
-    const FEVER = { ...NORMAL, bpm: 170, arp: 'both' };
-    const BOSS = { ...NORMAL, bpm: 168, prog: 2, drum: 'drive', seed: 20517, bright: 0.65, arp: 'both', bassVol: 0.36 };
-    const FINAL = { ...NORMAL, bpm: 176, prog: 0, drum: 'drive', bass: 'slap16', seed: 31337, bright: 0.7, arp: 'both', bassVol: 0.42, echo: 0.22 };
+    const NORMAL = { bpm: 168, mode: 'minor', prog: 2, drum: 'shuffle', bass: 'octave', lead: 'tri', dens: 'mid', arp: 'chord', echo: 0.45, bright: 0.7, bassVol: 0.3, leadVol: 0.9, swing: 0.06, seed: 2898 };
+    const FEVER = { ...NORMAL, bpm: 182, arp: 'both' };
+    const BOSS = { ...NORMAL, bpm: 180, prog: 0, drum: 'drive', seed: 20517, bright: 0.75, arp: 'both', bassVol: 0.36, echo: 0.3 };
+    const FINAL = { ...NORMAL, bpm: 188, prog: 1, drum: 'drive', bass: 'slap16', seed: 31337, bright: 0.8, arp: 'both', bassVol: 0.42, echo: 0.22 };
     const ENDING = { ...NORMAL, bpm: 96, drum: 'half', arp: 'chord', echo: 0.5, bright: 0.45, bassVol: 0.34, swing: 0.1 };
 
     const SCALES = { major: [0, 2, 4, 5, 7, 9, 11], minor: [0, 2, 3, 5, 7, 8, 10], dorian: [0, 2, 3, 5, 7, 9, 10] };
