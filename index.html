@@ -20,11 +20,15 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
 .pix{display:inline-flex;align-items:center;justify-content:center;max-width:100%;vertical-align:middle}
 .ov{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:17px;padding:14px 12px;text-align:center;background:rgba(4,15,9,.84);z-index:2}
 .ov[hidden],[hidden]{display:none!important}
-.titlebar{padding:5px 8px;border-top:2px solid #466c50;border-bottom:2px solid #466c50}
-.titleArt{width:min(320px,90%);height:auto;filter:drop-shadow(0 6px 0 #061009)}
-.instructions{display:flex;flex-direction:column;gap:12px;padding:12px 8px;background:rgba(10,37,24,.8);border:3px solid #477b53;width:min(340px,100%)}
-.instructions>div{display:flex;align-items:center;justify-content:center}
-.instructions .accent{padding-top:8px;border-top:2px dashed #477b53}
+.titleArt{width:min(340px,92%);height:auto;filter:drop-shadow(0 6px 0 #061009)}
+.lineup{display:block;width:min(340px,92%);height:auto;image-rendering:pixelated;image-rendering:crisp-edges}
+#title{cursor:pointer;gap:18px}
+.tapbtn{background:none;border:0;padding:8px;cursor:pointer}
+.subbtn{min-height:40px;padding:6px 14px;background:#f7efc1;border:3px solid #07120a;box-shadow:3px 3px 0 #07120a;cursor:pointer}
+.subbtn:active{transform:translate(2px,2px);box-shadow:1px 1px 0 #07120a}
+.best-row{display:flex;flex-direction:column;align-items:center;gap:8px}
+#records{background:#04100a;z-index:3}
+.over-btns{display:flex;gap:12px;flex-wrap:wrap;justify-content:center}
 .btn,.game-button,.card{border-radius:0;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation}
 .btn{min-height:54px;background:var(--lemon);color:var(--ink);border:4px solid #07120a;box-shadow:5px 5px 0 #bb8a23;padding:12px 20px;animation:bob .95s steps(2,end) infinite}
 .btn:active{transform:translate(3px,3px);box-shadow:2px 2px 0 #bb8a23}
@@ -75,16 +79,11 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
     <button class="burstBtn game-button" id="burstBtn" type="button" hidden disabled aria-label="Soda burst charge"><span class="pix" data-pixel="BURST 0%" data-size="2"></span></button>
     <button class="snd game-button" id="bgmBtn" type="button" aria-label="Open options"><span class="pix" data-pixel="OPTION" data-size="2" data-color="#07120a"></span></button>
     <div class="ov" id="title">
-      <div class="titlebar"><span class="pix" data-pixel="ONE PLAYER / 16BIT" data-size="2" data-color="#b8ffbc"></span></div>
-      <canvas class="titleArt" id="titleArt" width="320" height="170" aria-label="Melon Soda Burst"></canvas>
-      <div class="instructions">
-        <div><span class="pix" data-pixel="DRAG LEFT / RIGHT" data-size="2"></span></div>
-        <div><span class="pix" data-pixel="AUTO FIRE - POP THEM ALL" data-size="2"></span></div>
-        <div class="accent"><span class="pix" data-pixel="JUST HIT + GRAZE = BURST" data-size="2" data-color="#ffe169"></span></div>
-      </div>
-      <button class="btn" id="startBtn" type="button" aria-label="Start game"><span class="pix" data-pixel="START GAME" data-size="3" data-color="#07120a"></span></button>
-      <div class="best" id="titleBest"></div>
-      <div class="blinkline"><span class="pix" data-pixel="READY PLAYER ONE" data-size="2" data-color="#9dd8b3"></span></div>
+      <canvas class="titleArt" id="titleArt" width="320" height="120" aria-label="Melon Soda Burst"></canvas>
+      <canvas class="lineup" id="lineup" width="320" height="170" aria-label="Bosses"></canvas>
+      <button class="tapbtn blinkline" id="startBtn" type="button" aria-label="Start game"><span class="pix" data-pixel="TAP TO START" data-size="3" data-color="#ffe169"></span></button>
+      <div class="best-row"><div class="best" id="titleBest"></div><div class="best" id="titleRank"></div></div>
+      <button class="subbtn" id="recordsBtn" type="button" aria-label="Show records"><span class="pix" data-pixel="RECORDS" data-size="2" data-color="#07120a"></span></button>
     </div>
     <div class="ov" id="pick" hidden>
       <div class="pick-title" id="pickTitle"><span class="pix" data-pixel="WAVE CLEAR" data-size="3" data-color="#ffe169"></span></div>
@@ -106,6 +105,12 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
         <button class="btn" id="titleBtn" type="button" aria-label="Back to title"><span class="pix" data-pixel="TITLE" data-size="3" data-color="#07120a"></span></button>
       </div>
     </div>
+    <div class="ov" id="records" hidden>
+      <div class="pick-title"><span class="pix" data-pixel="RECORDS" data-size="4" data-color="#ffe169"></span></div>
+      <canvas class="lineup" id="recLineup" width="320" height="170" aria-label="Defeated bosses"></canvas>
+      <div class="stats" id="recStats"></div>
+      <button class="btn" id="recClose" type="button" aria-label="Close records"><span class="pix" data-pixel="BACK" data-size="3" data-color="#07120a"></span></button>
+    </div>
     <div class="ov" id="settings" hidden>
       <div class="pick-title"><span class="pix" data-pixel="OPTIONS" data-size="4" data-color="#ffe169"></span></div>
       <div class="opts" id="opts"></div>
@@ -121,10 +126,11 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
         <div><span class="pix" data-pixel="MAX COMBO" data-size="2"></span></div><div id="rCombo"></div>
         <div><span class="pix" data-pixel="JUST HITS" data-size="2"></span></div><div id="rJust"></div>
         <div><span class="pix" data-pixel="GRAZES" data-size="2"></span></div><div id="rGraze"></div>
-        <div><span class="pix" data-pixel="BURSTS" data-size="2"></span></div><div id="rBurst"></div>
-        <div><span class="pix" data-pixel="HI SCORE" data-size="2"></span></div><div id="rBest"></div>
       </div>
-      <button class="btn" id="retryBtn" type="button" aria-label="Play again"><span class="pix" data-pixel="TRY AGAIN" data-size="3" data-color="#07120a"></span></button>
+      <div class="over-btns">
+        <button class="btn" id="retryBtn" type="button" aria-label="Play again"><span class="pix" data-pixel="RETRY" data-size="3" data-color="#07120a"></span></button>
+        <button class="btn" id="overTitleBtn" type="button" aria-label="Back to title"><span class="pix" data-pixel="TITLE" data-size="3" data-color="#07120a"></span></button>
+      </div>
     </div>
   </div>
 </div>
@@ -217,6 +223,11 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
     Object.assign(SET, JSON.parse(localStorage.getItem('msb-settings') || '{}'));
     if (localStorage.getItem('msb-bgm') === 'off' && !localStorage.getItem('msb-settings')) SET.bgm = 0;
   } catch (e) {}
+  // 記録（倒したボス、全クリ回数、最短クリアタイムなど）
+  const REC = { bosses: {}, clears: 0, bestTime: 0, bestWave: 0, maxCombo: 0, bestClearRank: '' };
+  try { Object.assign(REC, JSON.parse(localStorage.getItem('msb-records') || '{}')); } catch (e) {}
+  const saveRec = () => { try { localStorage.setItem('msb-records', JSON.stringify(REC)); } catch (e) {} };
+  const RANK_ORDER = ['B', 'A', 'S', 'SS'];
   const saveSet = () => { try { localStorage.setItem('msb-settings', JSON.stringify(SET)); } catch (e) {} };
   try { best = +localStorage.getItem('msb-best') || 0; } catch (e) {}
 
@@ -689,6 +700,7 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
     if (mile) { S.banner = { text: mile, sub: S.combo + ' COMBO', t: 0, dur: 70, col: '#ffd93b' }; sfx.fanfare(); }
   }
   function bossDown(b) {
+    if (b.bossType) { REC.bosses[b.bossType] = true; saveRec(); }
     S.boss = null; S.grape = null; S.melon = null; S.cherry = null; S.seeds = []; bgm.boss(false);
     if (b.bossType === 'titan') {
       S.titan = null; S.drips = []; S.puddles = []; S.allClear = true; S.fw = 240;
@@ -1019,6 +1031,10 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
       setPixel(a, k, 2, '#f7efc1'); setPixel(b, v, 2, '#ffe169'); box.append(a, b);
     }
     const rk = S.hits === 0 ? ['SS', '#ffe169'] : S.hits <= 2 ? ['S', '#ffe169'] : S.hits <= 5 ? ['A', '#ff8c42'] : ['B', '#84d1ff'];
+    REC.clears++; REC.bestWave = Math.max(REC.bestWave, S.wave); REC.maxCombo = Math.max(REC.maxCombo, S.maxCombo);
+    if (!REC.bestTime || sec < REC.bestTime) REC.bestTime = sec;
+    if (RANK_ORDER.indexOf(rk[0]) > RANK_ORDER.indexOf(REC.bestClearRank)) REC.bestClearRank = rk[0];
+    saveRec();
     setPixel($('endRank'), 'CLEAR RANK ' + rk[0], 4, rk[1]);
     $('ending').hidden = false; $('pauseBtn').hidden = true; $('burstBtn').hidden = true;
     sfx.fanfare();
@@ -1026,17 +1042,20 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
   $('endlessBtn').addEventListener('click', () => {
     $('ending').hidden = true; bgm.ending(false); mode = 'play'; showPick();
   });
-  $('titleBtn').addEventListener('click', () => {
-    $('ending').hidden = true; bgm.ending(false); bgm.boss(false);
+  function toTitle() {
+    $('ending').hidden = true; $('over').hidden = true; bgm.ending(false); bgm.boss(false);
     S = fresh(); mode = 'title'; $('title').hidden = false; $('pauseBtn').hidden = true; $('burstBtn').hidden = true;
-    if (best) setPixel($('titleBest'), 'HI SCORE ' + best.toLocaleString(), 2, '#b8ffbc');
-  });
+    refreshTitle();
+  }
+  $('titleBtn').addEventListener('click', toTitle);
+  $('overTitleBtn').addEventListener('click', toTitle);
   function showOver() {
     const isBest = S.score > best;
     if (isBest) { best = S.score; try { localStorage.setItem('msb-best', String(best)); } catch (e) {} }
     // スコアを1.2秒かけて数え上げ、最後にランクを出す（到達WAVEで判定）
     const final = S.score, t0 = performance.now(), rankEl = $('rRank');
     rankEl.hidden = true; $('rNew').hidden = true;
+    REC.bestWave = Math.max(REC.bestWave, S.wave); REC.maxCombo = Math.max(REC.maxCombo, S.maxCombo); saveRec();
     const grade = S.allClear ? ['S+', '#ffe169'] : S.wave >= 15 ? ['S', '#ffe169'] : S.wave >= 10 ? ['A', '#ff8c42'] : S.wave >= 6 ? ['B', '#84d1ff'] : S.wave >= 3 ? ['C', '#b8ffbc'] : ['D', '#f7efc1'];
     const tickUp = () => {
       const k = Math.min(1, (performance.now() - t0) / 1200), v = Math.round(final * (1 - Math.pow(1 - k, 3)));
@@ -1076,9 +1095,26 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
   $('pauseBtn').addEventListener('click', pauseGame);
   $('resumeBtn').addEventListener('click', resumeGame);
   document.addEventListener('visibilitychange', () => { if (document.hidden) pauseGame(); });
-  $('startBtn').addEventListener('click', start);
+  $('title').addEventListener('click', e => { if (e.target.closest('#recordsBtn')) return; start(); });
   $('retryBtn').addEventListener('click', start);
-  if(best)setPixel($('titleBest'),'HI SCORE '+best.toLocaleString(),2,'#b8ffbc');
+  function refreshTitle() {
+    if (best) setPixel($('titleBest'), 'HI SCORE ' + best.toLocaleString(), 2, '#b8ffbc');
+    if (REC.clears) setPixel($('titleRank'), 'ALL CLEAR X' + REC.clears + (REC.bestClearRank ? '  BEST RANK ' + REC.bestClearRank : ''), 2, '#ffe169');
+  }
+  $('recordsBtn').addEventListener('click', () => {
+    initAudio(); bgm.start();
+    const fmtT = v => v ? Math.floor(v / 60) + ':' + String(v % 60).padStart(2, '0') : '--:--';
+    const box = $('recStats'); box.replaceChildren();
+    const nB = ['cherry', 'grape', 'melon', 'titan'].filter(k => REC.bosses[k]).length;
+    for (const [k, v] of [['HI SCORE', best.toLocaleString()], ['BEST WAVE', REC.bestWave || '-'], ['MAX COMBO', REC.maxCombo || '-'], ['BOSSES', nB + ' / 4'],
+      ['ALL CLEARS', REC.clears], ['BEST CLEAR TIME', fmtT(REC.bestTime)], ['BEST CLEAR RANK', REC.bestClearRank || '-']]) {
+      const a = document.createElement('div'), b = document.createElement('div');
+      setPixel(a, k, 2, '#f7efc1'); setPixel(b, v, 2, '#ffe169'); box.append(a, b);
+    }
+    $('records').hidden = false;
+  });
+  $('recClose').addEventListener('click', () => { $('records').hidden = true; });
+  refreshTitle();
 
   // ---- 入力：相対ドラッグ ----
   let lastX = null;
@@ -1154,6 +1190,7 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
     const FEVER = { ...NORMAL, bpm: 182, arp: 'both' };
     const BOSS = { ...NORMAL, bpm: 180, prog: 0, drum: 'drive', seed: 20517, bright: 0.75, arp: 'both', bassVol: 0.36, echo: 0.3 };
     const FINAL = { ...NORMAL, bpm: 188, prog: 1, drum: 'drive', bass: 'slap16', seed: 31337, bright: 0.8, arp: 'both', bassVol: 0.42, echo: 0.22 };
+    const TITLE = { ...NORMAL, bpm: 120, drum: 'half', dens: 'mid', arp: 'chord', echo: 0.55, bright: 0.55, bassVol: 0.32 };
     const ENDING = { ...NORMAL, bpm: 96, drum: 'half', arp: 'chord', echo: 0.5, bright: 0.45, bassVol: 0.34, swing: 0.1 };
 
     const SCALES = { major: [0, 2, 4, 5, 7, 9, 11], minor: [0, 2, 3, 5, 7, 8, 10], dorian: [0, 2, 3, 5, 7, 9, 10] };
@@ -1317,11 +1354,11 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
       } else { for (const [at, o, len] of [[0, 0, 6], [7, 0, 2], [10, 7, 3], [14, 12, 2]]) if (at === i) bassNote(style, r + o, i % 4 === 2 ? tSw : t, len * sp * 0.95, vol); }
     }
     let ending = false;
-    function current() { return ending ? ENDING : boss === 'final' ? FINAL : boss ? BOSS : S.fever > 0 ? FEVER : NORMAL; }
+    function current() { return ending ? ENDING : mode === 'title' ? TITLE : boss === 'final' ? FINAL : boss ? BOSS : S.fever > 0 ? FEVER : NORMAL; }
     function sched(s, t, sp, P) {
       const song = getSong(P), bar = Math.floor(s / 16) % 8, i = s % 16, ch = song.ch[bar], nextCh = song.ch[(bar + 1) % 8];
       // コンボ15以上で高速アルペジオを1段だけ足す。切り替えは小節の頭、減らすのは4小節の区切りまで待つ
-      const want = ending ? 2 : boss || S.fever > 0 || mode !== 'play' || S.combo >= 15 ? 3 : 2;
+      const want = ending || mode === 'title' ? 2 : boss || S.fever > 0 || mode !== 'play' || S.combo >= 15 ? 3 : 2;
       if (i === 0 && (want > layer || bar % 4 === 0)) layer = want;
       const swing = P.drum === 'shuffle' ? Math.max(P.swing, 0.3) : P.swing, tSw = t + sp * swing;
       drums(P.drum, i, bar, t, tSw, layer >= 3);
@@ -1412,7 +1449,7 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
       box.appendChild(row);
     }
   }
-  $('bgmBtn').addEventListener('click', () => { initAudio(); if (mode === 'play') pauseGame(); buildOpts(); $('settings').hidden = false; });
+  $('bgmBtn').addEventListener('click', () => { initAudio(); bgm.start(); if (mode === 'play') pauseGame(); buildOpts(); $('settings').hidden = false; });
   $('optClose').addEventListener('click', () => { $('settings').hidden = true; });
 
   // ---- 描画 ----
@@ -1603,20 +1640,60 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
     });
     return {bubble,boss,player,flash,fizz,grape,grapeCore,melon,cream,titan};
   })();
+  // ロゴ：枠なし。後ろで炭酸の泡が立ち上る
+  const logoFizz = Array.from({ length: 22 }, () => ({ x: Math.random() * 320, y: Math.random() * 120, v: 0.3 + Math.random() * 0.6, s: 2 + (Math.random() * 2 | 0) * 2 }));
   function paintTitleArt(){
     const c=$('titleArt'),g=c.getContext('2d');g.imageSmoothingEnabled=false;
-    g.fillStyle='#0a2918';g.fillRect(0,0,320,170);
-    for(let y=8;y<160;y+=12){g.fillStyle='#18412a';g.fillRect(0,y,320,2)}
-    g.fillStyle='#4a8e58';g.fillRect(3,3,314,164);g.fillStyle='#07180e';g.fillRect(7,7,306,156);
-    g.drawImage(spriteBank.bubble[3],11,14,30,30);
-    g.drawImage(spriteBank.bubble[1],274,109,28,28);
-    g.drawImage(spriteBank.boss[0],270,10,36,38);
-    g.drawImage(spriteBank.player[0],20,105,36,48);
-    pixText(g,'MELON SODA',160,34,4,'#f7efc1','center','#5c2032');
-    pixText(g,'BURST!',160,80,6,'#ffe169','center','#d7355a');
-    pixText(g,'16 BIT ARCADE',160,139,2,'#b8ffbc','center');
+    g.clearRect(0,0,320,120);
+    for(const f of logoFizz){f.y-=f.v;if(f.y<-4){f.y=124;f.x=Math.random()*320;}g.fillStyle='rgba(184,255,188,.28)';g.fillRect(Math.round(f.x),Math.round(f.y),f.s,f.s);}
+    pixText(g,'MELON SODA',160,14,4,'#f7efc1','center','#5c2032');
+    pixText(g,'BURST!',160,58,7,'#ffe169','center','#d7355a');
   }
-  paintTitleArt();
+  // ボスの勢ぞろい：倒したボスは色つき、まだならシルエットに「?」
+  const lineupArt = (() => {
+    const mk = (w, h, fn) => makeSprite(w, h, fn);
+    const cherry = spriteBank.boss[0];
+    const grape = mk(220, 220, g => {
+      g.translate(110, 110);
+      for (let k = 0; k < 6; k++) { const a = k * Math.PI / 3 - Math.PI / 2, sp = spriteBank.grape[1]; g.drawImage(sp, Math.round(Math.cos(a) * 66 - sp.width / 2), Math.round(Math.sin(a) * 66 - sp.height / 2)); }
+      g.drawImage(spriteBank.grapeCore[0], -62, -84);
+    });
+    const melon = spriteBank.melon[0];
+    const titan = mk(170, 410, g => {
+      const base = 320;
+      for (let k = 0; k < 8; k++) { const w = 64 - k * 7; pxRect(g, 85 - w / 2, base + 33 + k * 6, w, 6, k % 2 ? '#b07a36' : '#d9a35b'); }
+      [4, 4, 3, 3].forEach((t, k) => { const sp = spriteBank.cream[t]; g.drawImage(sp, Math.round(85 - sp.width / 2), Math.round(base - k * 52 - sp.height / 2)); });
+      g.drawImage(spriteBank.titan[0], 17, base - 4 * 52 - 8 - 96);
+    });
+    const shadow = src => mk(src.width, src.height, g => {
+      g.drawImage(src, 0, 0); g.globalCompositeOperation = 'source-in'; g.fillStyle = '#1f4a2e'; g.fillRect(0, 0, src.width, src.height);
+      g.globalCompositeOperation = 'source-over'; pixText(g, '?', src.width / 2, src.height / 2 - 21, 6, '#8fd4a0', 'center');
+    });
+    // [キー, 絵, 横位置, 縮尺, 揺れ方]
+    const L = [['cherry', cherry, 46, 0.4, 'hop'], ['grape', grape, 112, 0.34, 'sway'], ['titan', titan, 190, 0.36, 'bob'], ['melon', melon, 270, 0.4, 'sway']];
+    return L.map(([key, img, x, sc, mv]) => ({ key, img, sil: shadow(img), x, sc, mv }));
+  })();
+  function paintLineup(id, t) {
+    const c = $(id); if (!c) return;
+    const g = c.getContext('2d'); g.imageSmoothingEnabled = false; g.clearRect(0, 0, 320, 170);
+    g.fillStyle = '#d6c688'; g.fillRect(0, 154, 320, 16);
+    g.fillStyle = '#f7efc1'; for (let x = -8; x <= 328; x += 16) { g.fillRect(x, 150, 12, 6); if ((x / 16) % 2 === 0) g.fillRect(x + 4, 146, 8, 4); }
+    lineupArt.forEach((b, i) => {
+      const img = REC.bosses[b.key] ? b.img : b.sil, w = Math.round(img.width * b.sc), h = Math.round(img.height * b.sc);
+      let dy = 0, dx = 0;
+      if (b.mv === 'hop') dy = -Math.round(Math.abs(Math.sin(t / 380 + i)) * 10);
+      else if (b.mv === 'sway') dx = Math.round(Math.sin(t / 700 + i) * 3);
+      else dy = Math.round(Math.sin(t / 900) * 2);
+      g.drawImage(img, Math.round(b.x - w / 2 + dx), 150 - h + dy, w, h);
+    });
+    const pl = spriteBank.player[0];
+    g.drawImage(pl, 296 - 12, 150 - 32, 24, 32);
+  }
+  (function titleLoop(t) {
+    if (!$('title').hidden) { paintTitleArt(); paintLineup('lineup', t); }
+    if (!$('records').hidden) paintLineup('recLineup', t);
+    requestAnimationFrame(titleLoop);
+  })(0);
 
   function drawBlocks() {
     for (const k of S.blocks) {
