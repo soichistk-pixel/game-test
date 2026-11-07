@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="theme-color" content="#0b0618">
-<title>DOPA DROP</title>
+<title>Pocchari Panic</title>
 <style>
 html,body{margin:0;height:100%;background:#0b0618;overflow:hidden;touch-action:none;overscroll-behavior:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
 body{display:flex;align-items:center;justify-content:center}
@@ -16,7 +16,7 @@ canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges;touch
 <script>
 'use strict';
 // =====================================================================
-//  DOPA DROP  — 16-bit style falling-pair puzzle. Match 4, chain, FEVER.
+//  POCCHARI PANIC — 16-bit falling-food puzzle. Match 4, chain, BUFFET.
 // =====================================================================
 const W=180,H=320,CELL=16,COLS=6,ROWS=13;          // row 0 = hidden spawn row
 const BX=6,BY=34;                                   // grid row r is drawn at BY+r*CELL (row 1 => y 50)
@@ -37,13 +37,15 @@ const rnd=n=>Math.floor(Math.random()*n);
 const fmt=n=>Math.floor(n).toLocaleString('en-US');
 const HUE=[...Array(12)].map((_,i)=>`hsl(${i*30},100%,64%)`);
 
-// ------------------------------------------------------------------ palette & sprites
+// ------------------------------------------------------------------ characters & sprites
+// 0 karaage, 1 burger, 2 ramen, 3 curry, 4 kebab, 5 donut (CHEAT DAY bomb)
+const NAMES=['KARAAGE','BURGER','RAMEN','CURRY','KEBAB'];
 const PAL=[
-  {n:'#ff4f6e',l:'#ffa8b8',d:'#b8204a',o:'#3e0618'}, // cherry
-  {n:'#3f8cff',l:'#a8d4ff',d:'#1f4fc2',o:'#0a173e'}, // soda
-  {n:'#3fe07a',l:'#b8ffb4',d:'#1c9a4a',o:'#06301a'}, // melon
-  {n:'#ffc93f',l:'#fff2ad',d:'#d0801c',o:'#3e2206'}, // lemon
-  {n:'#b45cff',l:'#e4b8ff',d:'#6f2bc2',o:'#220840'}, // grape
+  {n:'#f08a2c',l:'#ffc874',d:'#b4561a',o:'#3e1606'}, // karaage: golden fried
+  {n:'#ec4a3e',l:'#ff9e8c',d:'#a8241e',o:'#3a0806'}, // burger: ketchup red
+  {n:'#ffd84a',l:'#fff6b8',d:'#d49a1c',o:'#3e2a04'}, // ramen: noodle yellow
+  {n:'#9a5426',l:'#d48e4e',d:'#62300e',o:'#220c02'}, // curry: roux brown
+  {n:'#46c45e',l:'#b2f2a4',d:'#1e8a3a',o:'#06300e'}, // kebab: lettuce green
 ];
 const STAR=5;
 function mkC(w,h){const c=document.createElement('canvas');c.width=w;c.height=h;return c}
@@ -52,67 +54,85 @@ function blobIn(x,y){
   const r=5,cx=x<6?6:(x>9?9:x),cy=y<6?6:(y>9?9:y),dx=x-cx,dy=y-cy;
   return dx*dx+dy*dy<=r*r+1;
 }
-function face(g,f,blush){
-  const px=(x,y,c)=>{g.fillStyle=c;g.fillRect(x,y,1,1)};
-  const K='#140818';
-  if(f===0){ // open eyes
-    for(const ex of [5,9]){g.fillStyle=K;g.fillRect(ex,6,2,3);px(ex,6,'#fff')}
-    px(7,11,K);px(8,11,K);
-  }else if(f===1){ // blink
-    g.fillStyle=K;g.fillRect(5,8,2,1);g.fillRect(9,8,2,1);px(7,11,K);px(8,11,K);
-  }else{ // happy ^^
-    for(const ex of [4,9]){px(ex,8,K);px(ex+1,7,K);px(ex+2,8,K)}
-    g.fillStyle=K;g.fillRect(7,10,2,2);px(7,11,'#ff5c7a');px(8,11,'#ff5c7a');
+// m bits: 1 up, 2 right, 4 down, 8 left = merged with same-food neighbour
+function shapeIn(x,y,m){
+  if(x<0||x>15||y<0||y>15){
+    if((x>15&&!(m&2))||(x<0&&!(m&8))||(y>15&&!(m&4))||(y<0&&!(m&1)))return false;
+    return shapeIn(Math.max(0,Math.min(15,x)),Math.max(0,Math.min(15,y)),m);
   }
-  if(blush){px(3,10,blush);px(4,10,blush);px(11,10,blush);px(12,10,blush)}
+  if(blobIn(x,y))return true;
+  const hb=y>=2&&y<=13,vb=x>=2&&x<=13;
+  return ((m&2)&&x>=8&&hb)||((m&8)&&x<=7&&hb)||((m&1)&&y<=7&&vb)||((m&4)&&y>=8&&vb);
 }
-function makeBlob(p,f){
-  const c=mkC(16,16),g=c.getContext('2d');
-  const B=[[0,0.5],[0.75,0.25]];
+function hash(x,y,k){let h=(x*374761393+y*668265263+k*982451653)|0;h=Math.imul(h^(h>>>13),1274126177);return ((h^(h>>>16))>>>0)/4294967296}
+function texture(t,x,y){
+  switch(t){
+    case 0:{const h=hash(x,y,1);return h<0.14?PAL[0].d:h<0.22?PAL[0].l:null} // crispy batter
+    case 1:{if([[8,2],[9,2],[11,3],[12,3],[2,6]].some(([a,b])=>a===x&&b===y))return '#fff4d8'; // sesame
+      if(y===13&&x%3!==1)return '#5ad04a';if(y===14&&x%3===0)return '#2e9a30';return null} // lettuce frill
+    case 2:{const wy=Math.round(Math.sin(x*1.2));if(y===3+wy||y===13+wy)return PAL[2].d;if(y===2+wy)return '#fffbe0';return null} // noodles
+    case 3:{const h=hash(x>>1,y>>1,3);return h<0.13?'#ff9a3a':h<0.22?'#ffe08a':null} // carrot & potato
+    case 4:{const z=[0,1,2,1][x&3];if(y===2+z)return '#ffffff';const h=hash(x,y,4);return h<0.06?'#ff4a4a':h<0.1?'#f0e0ff':null} // sauce, tomato, onion
+  }
+  return null;
+}
+function makeBody(t,m){
+  const p=PAL[t],c=mkC(16,16),g=c.getContext('2d'),B=[[0,0.5],[0.75,0.25]];
+  const I=(x,y)=>shapeIn(x,y,m),dist=(x,y,dx,dy)=>{for(let k=1;k<=5;k++)if(!I(x+dx*k,y+dy*k))return k;return 9};
   for(let y=0;y<16;y++)for(let x=0;x<16;x++){
-    if(!blobIn(x,y))continue;
-    const edge=!blobIn(x-1,y)||!blobIn(x+1,y)||!blobIn(x,y-1)||!blobIn(x,y+1);
+    if(!I(x,y))continue;
     let col;
-    if(edge)col=p.o;
+    if(!I(x-1,y)||!I(x+1,y)||!I(x,y-1)||!I(x,y+1))col=p.o;
     else{
-      const s=x+y,th=B[y&1][x&1];
-      if(s<=9)col=p.l;
-      else if(s<=12)col=((s-9)/4>th)?p.n:p.l;
-      else if(s<=19)col=p.n;
-      else if(s<=22)col=((s-19)/4>th)?p.d:p.n;
-      else col=p.d;
-      if(!blobIn(x+1,y+1)&&s>14)col=p.d;
+      const dt=dist(x,y,0,-1),db=dist(x,y,0,1),dl=dist(x,y,-1,0),dr=dist(x,y,1,0),th=B[y&1][x&1];
+      col=p.n;
+      if(dt<=3||dl<=2)col=p.l;else if(dt===4&&th<0.5)col=p.l;
+      if(db<=3||dr<=2)col=p.d;else if(db===4&&th<0.5)col=p.d;
+      if(!(x>=4&&x<=11&&y>=5&&y<=12)){const tx=texture(t,x,y);if(tx)col=tx}
     }
     g.fillStyle=col;g.fillRect(x,y,1,1);
   }
+  // glossy shine
+  if(!(m&1)){g.fillStyle='#ffffff';g.fillRect(4,3,3,1);g.fillRect(3,4,1,2);g.fillStyle='rgba(255,255,255,0.6)';g.fillRect(8,3,1,1)}
+  if(!(m&4)&&!(m&2)){g.fillStyle='rgba(255,255,255,0.75)';g.fillRect(12,11,1,2)}
+  return c;
+}
+function makeFlash(m){
+  const c=mkC(16,16),g=c.getContext('2d'),I=(x,y)=>shapeIn(x,y,m);
+  for(let y=0;y<16;y++)for(let x=0;x<16;x++){if(!I(x,y))continue;
+    g.fillStyle=(!I(x-1,y)||!I(x+1,y)||!I(x,y-1)||!I(x,y+1))?'#ffd8f0':'#ffffff';g.fillRect(x,y,1,1)}
+  return c;
+}
+function makeFace(f){
+  const c=mkC(16,16),g=c.getContext('2d'),px=(x,y,col)=>{g.fillStyle=col;g.fillRect(x,y,1,1)},K='#1a0a14';
+  if(f===0){for(const ex of [5,9]){g.fillStyle=K;g.fillRect(ex,6,2,3);px(ex,6,'#fff');px(ex+1,8,'#5a4a7a')}
+    px(6,10,K);px(7,11,K);px(8,11,K);px(9,10,K)}
+  else if(f===1){g.fillStyle=K;g.fillRect(5,8,2,1);g.fillRect(9,8,2,1);px(6,10,K);px(7,11,K);px(8,11,K);px(9,10,K)}
+  else if(f===2){for(const ex of [4,9]){px(ex,8,K);px(ex+1,7,K);px(ex+2,8,K)}
+    g.fillStyle=K;g.fillRect(6,10,4,2);px(7,11,'#ff5c7a');px(8,11,'#ff5c7a')}
+  else{for(const ex of [4,9]){px(ex,6,K);px(ex+2,6,K);px(ex+1,7,K);px(ex,8,K);px(ex+2,8,K)}
+    px(6,11,K);px(7,10,K);px(8,11,K);px(9,10,K)}
+  const bl=f===3?'rgba(120,170,255,0.85)':'rgba(255,110,160,0.8)';
+  g.fillStyle=bl;g.fillRect(3,10,2,1);g.fillRect(11,10,2,1);
+  return c;
+}
+function makeDonut(h){
+  const c=mkC(16,16),g=c.getContext('2d');
+  const I=(x,y)=>{const d=Math.hypot(x+0.5-8,y+0.5-8);return d<=7.4&&d>=2.4};
+  for(let y=0;y<16;y++)for(let x=0;x<16;x++){if(!I(x,y))continue;
+    const edge=!I(x-1,y)||!I(x+1,y)||!I(x,y-1)||!I(x,y+1);let col;
+    const icing=y<9+Math.round(Math.sin(x*1.4)*1.2);
+    if(edge)col=icing?`hsl(${h},80%,28%)`:'#5a2a08';
+    else if(icing){const hs=hash(x,y,9);col=hs<0.12?HUE[Math.floor(hs*100)%12]:((x+y)<11?`hsl(${h},100%,88%)`:`hsl(${h},100%,68%)`)}
+    else col=(x+y)>20?'#b0682a':'#e8a858';
+    g.fillStyle=col;g.fillRect(x,y,1,1)}
   g.fillStyle='#fff';g.fillRect(4,3,2,1);g.fillRect(3,4,1,1);
-  face(g,f,'rgba(255,120,160,0.75)');
   return c;
 }
-function makeFlash(){
-  const c=mkC(16,16),g=c.getContext('2d');
-  for(let y=0;y<16;y++)for(let x=0;x<16;x++){if(!blobIn(x,y))continue;
-    const edge=!blobIn(x-1,y)||!blobIn(x+1,y)||!blobIn(x,y-1)||!blobIn(x,y+1);
-    g.fillStyle=edge?'#ffe9ff':'#ffffff';g.fillRect(x,y,1,1)}
-  return c;
-}
-function starIn(x,y){
-  const cx=7.5,cy=8,px=x+0.5-cx,py=y+0.5-cy,a=Math.atan2(py,px)+Math.PI/2,d=Math.hypot(px,py);
-  const k=((a/(2*Math.PI))*5%1+1)%1,t=Math.abs(k-0.5)*2; // 1 at points
-  return d<=3.6+t*4.1;
-}
-function makeStar(h){
-  const c=mkC(16,16),g=c.getContext('2d');
-  for(let y=0;y<16;y++)for(let x=0;x<16;x++){if(!starIn(x,y))continue;
-    const edge=!starIn(x-1,y)||!starIn(x+1,y)||!starIn(x,y-1)||!starIn(x,y+1);
-    const hh=(h+(x+y)*12)%360;
-    g.fillStyle=edge?`hsl(${hh},90%,30%)`:((x+y)<13?'#fffbe0':`hsl(${hh},100%,70%)`);g.fillRect(x,y,1,1)}
-  face(g,2,null);
-  return c;
-}
-const BLOB=PAL.map(p=>[0,1,2].map(f=>makeBlob(p,f)));
-const FLASH=makeFlash();
-const STARS=[...Array(12)].map((_,i)=>makeStar(i*30));
+const BODY=PAL.map((_,t)=>[...Array(16)].map((_,m)=>makeBody(t,m)));
+const FLASHM=[...Array(16)].map((_,m)=>makeFlash(m));
+const FACES=[0,1,2,3].map(makeFace);
+const DONUTS=[...Array(12)].map((_,i)=>makeDonut(i*30));
 
 // ------------------------------------------------------------------ pixel font
 const GL={
@@ -226,6 +246,7 @@ const S={
     tone(1046.5,t+0.36,0.5,{w:'p25',v:0.08})},
   clear(){const t=now();for(let i=0;i<17;i++)tone(523.25*Math.pow(2,MAJ[i]/12),t+i*0.04,0.18,{w:i%2?'p12':'p25',v:0.08});noise(t,1,{v:0.08,f:8000})},
   over(){const t=now();[12,7,4,0,-5,-12].forEach((s,i)=>tone(392*Math.pow(2,s/12),t+i*0.16,0.2,{w:'p25',v:0.11}))},
+  ecg(flat){const t=now();if(flat)tone(1000,t+0.1,0.9,{w:'sine',v:0.12});else for(let i=0;i<3;i++)tone(1000,t+0.05+i*0.28,0.09,{w:'sine',v:0.12})},
   start(){const t=now();[0,7,12].forEach((s,i)=>tone(523.25*Math.pow(2,s/12),t+i*0.07,0.12,{w:'p25',v:0.1}))},
   ready(){tone(880,now(),0.08,{w:'p25',v:0.08})},
   go(){const t=now();tone(1318.5,t,0.25,{w:'p25',v:0.1});tone(659.25,t,0.25,{w:'square',v:0.05})},
@@ -377,9 +398,16 @@ function doPop(res){
   pops.push({x:Math.max(26,Math.min(82,sx)),y:sy-4,text:'+'+fmt(pts),t:0,life:1.1,s:pts>=20000?2:1,rb:chain>=3||feverT>0});
   if(chain>=2){for(let i=banners.length-1;i>=0;i--)if(banners[i].tag==='chain')banners.splice(i,1);
     addBanner(chain+' CHAIN!',{x:54,y:118,s:chain>=10?1:2,c:'#ffe45e',rb:chain>=3,life:1.1,tag:'chain',wave:chain>=4?2:1})}
-  if(res.star)addBanner('COLOR BOMB!',{x:54,y:96,s:1,rb:true,life:1.0});
+  {const ill=disease(chain);for(let i=banners.length-1;i>=0;i--)if(banners[i].tag==='ill')banners.splice(i,1);
+    addBanner(ill,{x:54,y:142,s:textW(ill,2)<=94?2:1,c:chain>=4?'#ff5c7a':'#ffffff',rb:chain>=6,life:1.1,tag:'ill',wave:chain>=4?1:0})}
+  if(chain>=4)parts.push({k:'ecg',x:BX,y:206,t:0,life:0.9,flat:chain>=7});
+  if(chain>=4)S.ecg(chain>=7);
+  if(res.star)addBanner('CHEAT DAY!',{x:54,y:96,s:2,rb:true,life:1.0});
   if(feverT<=0){fever=Math.min(100,fever+n*1.6+(chain-1)*12);if(fever>=100)feverReady=true}
 }
+const MILD=['GOUT!','FATTY LIVER!','BLOOD SUGAR!','CHOLESTEROL!'];
+const ILL=[null,null,'DIABETES!','HYPERTENSION!','HEART ATTACK!','STROKE!','CARDIAC ARREST!'];
+function disease(ch){return ch<=1?MILD[rnd(MILD.length)]:ch<ILL.length?ILL[ch]:'FLATLINE!!'}
 function finishPop(){
   const res=popInfo,n=res.cells.length;
   const coinsPer=chain>=4?3:chain>=2?2:1,maxCoins=50;let coins=0;
@@ -392,15 +420,15 @@ function finishPop(){
   if(chain>=4)confetti(20+chain*8);
   const nl=1+Math.floor(popped/30);
   if(nl>level){level=nl;addBanner('LEVEL UP!',{x:W/2,y:210,s:2,rb:true,life:1.4,wave:2});S.lvl();
-    if(level>=3&&colorsN<5){colorsN=5;addBanner('NEW COLOR!',{x:54,y:232,s:1,c:'#e4b8ff',life:1.4})}}
+    if(level>=3&&colorsN<5){colorsN=5;addBanner('KEBAB JOINS!',{x:54,y:232,s:1,c:'#b2f2a4',life:1.6})}}
   startSettle();
 }
 function isEmpty(){for(const row of grid)for(const b of row)if(b)return false;return true}
 function endSequence(){
   const had=chain>0;
   if(had){
-    if(chain>=3){const w=chain>=10?'GODLIKE!!':chain>=7?'INSANE!!':chain>=5?'AMAZING!':'GREAT!';
-      addBanner(w,{x:54,y:150,s:2,rb:true,life:1.4,wave:2,tag:'praise'});S.praise(chain);confetti(30+chain*10)}
+    if(chain>=3){const w=chain>=10?'FOOD COMA GOD!!':chain>=7?'MEGA METABO!':chain>=5?'CALORIE BOMB!':'TOO JUICY!';
+      addBanner(w,{x:54,y:168,s:textW(w,2)<=96?2:1,rb:true,life:1.4,wave:2,tag:'praise'});S.praise(chain);confetti(30+chain*10)}
     if(isEmpty()){const b=5000*level*(feverT>0?3:1);score+=b;addBanner('ALL CLEAR!',{x:W/2,y:100,s:2,rb:true,life:2,wave:3});
       pops.push({x:54,y:130,text:'+'+fmt(b),t:0,life:1.6,s:2,rb:true});S.clear();fireworks();flash=0.8;flashC='#ffffff';buzz([40,40,40,40,120])}
     streak++;
@@ -413,8 +441,8 @@ function endSequence(){
 }
 function startFever(){
   feverT=FEVER_TIME;fever=100;S.fever();buzz([50,30,50,30,100]);
-  addBanner('FEVER!!',{x:W/2,y:120,s:3,rb:true,life:1.8,wave:3});
-  addBanner('SCORE x3',{x:W/2,y:150,s:2,c:'#fff',rb:true,life:1.8});
+  addBanner('BUFFET TIME!',{x:W/2,y:110,s:2,rb:true,life:1.8,wave:3});addBanner('ALL YOU CAN EAT',{x:W/2,y:132,s:1,c:'#ffe45e',life:1.8});
+  addBanner('SCORE x3',{x:W/2,y:148,s:2,c:'#fff',rb:true,life:1.8});
   flash=0.6;flashC='#ff5cf0';confetti(80);
   for(const q of queue)if(Math.random()<0.5)q.b=STAR;
 }
@@ -446,6 +474,7 @@ function updateParts(dt){
       case 'sp':p.vx*=0.92;p.vy*=0.92;p.x+=p.vx*dt;p.y+=p.vy*dt;break;
       case 'ring':p.r+=p.vr*dt;break;
       case 'tr':p.y+=p.vy*dt;break;
+      case 'ecg':break;
       case 'cf':p.x+=p.vx*dt+Math.sin(p.t*5+p.ph)*0.6;p.y+=p.vy*dt;if(p.y>H+4)kill=true;break;
       case 'coin':
         if(p.t<0.35){p.vy+=320*dt;p.vx*=0.97;p.x+=p.vx*dt;p.y+=p.vy*dt}
@@ -465,6 +494,10 @@ function drawParts(){
       case 'sp':ctx.fillStyle=Math.floor(T*20)%2?'#fff':'#ffe45e';ctx.fillRect(x,y,1,1);if(p.t<p.life*0.6){ctx.fillRect(x-1,y,3,1);ctx.fillRect(x,y-1,1,3)}if(p.t<p.life*0.3){ctx.fillRect(x-2,y,5,1);ctx.fillRect(x,y-2,1,5)}break;
       case 'ring':{ctx.fillStyle=p.c;const n=Math.max(8,Math.floor(p.r*2.2));for(let i=0;i<n;i++){const a=i/n*Math.PI*2;ctx.fillRect(Math.round(p.x+Math.cos(a)*p.r),Math.round(p.y+Math.sin(a)*p.r),1,1)}break}
       case 'cf':{const w=Math.abs(Math.sin(p.t*8+p.ph))>0.5?2:1;ctx.fillStyle=p.c;ctx.fillRect(x,y,w,3);break}
+      case 'ecg':{const n=Math.min(96,Math.floor(p.t/p.life*1.6*96));ctx.fillStyle='#0b0618';ctx.fillRect(p.x,p.y-12,n,26);
+        for(let i=0;i<n;i++){const ph=i%32;let yy=0;if(!p.flat){yy=ph===12?-2:ph===14?-11:ph===15?7:ph===16?-3:0}
+          ctx.fillStyle=i>n-4?'#ffffff':'#5cff7a';ctx.fillRect(p.x+i,p.y+yy,1,1);if(i>0&&Math.abs(yy)>2){const a=Math.min(0,yy),b=Math.max(0,yy);ctx.fillRect(p.x+i,p.y+a,1,b-a)}}
+        break}
       case 'coin':{const w=[5,3,1,3][Math.floor(p.t*14)&3];ctx.fillStyle='#7a4a00';ctx.fillRect(x-Math.ceil(w/2)-1,y-3,w+2,7);ctx.fillStyle='#ffd23f';ctx.fillRect(x-Math.ceil(w/2),y-2,w,5);ctx.fillStyle='#fff6b0';ctx.fillRect(x-Math.ceil(w/2),y-2,1,2);break}
     }}
 }
@@ -549,7 +582,7 @@ function update(dt){
   if(state==='over'){overT+=dt;for(const d of dead){if(overT<d.d)continue;d.vy+=500*dt;d.x+=d.vx*dt;d.y+=d.vy*dt}return}
   if(state!=='play')return;
   if(freeze>0){freeze-=dt;return}
-  if(feverT>0&&phase!=='ready'){feverT-=dt;fever=feverT/FEVER_TIME*100;if(feverT<=0){feverT=0;fever=0;addBanner('FEVER END',{x:54,y:140,s:1,c:'#c8b6ff',life:1})}}
+  if(feverT>0&&phase!=='ready'){feverT-=dt;fever=feverT/FEVER_TIME*100;if(feverT<=0){feverT=0;fever=0;addBanner('BUFFET CLOSED',{x:54,y:120,s:1,c:'#c8b6ff',life:1.2})}}
   for(const row of grid)for(const b of row)if(b&&b.sq>0)b.sq=Math.max(0,b.sq-dt*7);
   switch(phase){
     case 'ready':phaseT-=dt;if(!goShown&&phaseT<0.6){goShown=true;addBanner('GO!!',{x:54,y:130,s:3,rb:true,life:0.6,wave:2});S.go()}if(phaseT<=0)spawnPiece();break;
@@ -607,12 +640,18 @@ function frameColors(){
   return ['#e6dcff','#7c5cff','#2e1a6e'];
 }
 function danger(){return !!(grid&&(grid[3][SPAWN_X]||grid[3][SPAWN_X+1]))}
-function spr(t,f){return t===STAR?STARS[Math.floor(T*16)%12]:BLOB[t][f]}
-function drawBlock(b,x,y,f){
-  const img=b.pop&&Math.floor(phaseT/0.06)%2===0?FLASH:spr(b.t,b.pop?2:f);
-  const a=Math.round(b.sq*3);
-  if(a>0)ctx.drawImage(img,x-a,y+a*2,16+a*2,16-a*2);else ctx.drawImage(img,x,y);
+function unitImgs(t,m,f){return t===STAR?[DONUTS[Math.floor(T*12)%12]]:[BODY[t][m],FACES[f]]}
+function drawUnit(t,x,y,f=0,m=0,sz=16){for(const im of unitImgs(t,m,f))ctx.drawImage(im,x,y,sz,sz)}
+function drawBlock(b,x,y,f,m){
+  if(b.pop&&Math.floor(phaseT/0.06)%2===0){ctx.drawImage(FLASHM[b.t===STAR?0:m],x,y);return}
+  if(b.pop)f=3;
+  const a=m===0?Math.round(b.sq*3):0,jig=(m===0&&!b.pop&&Math.sin(T*4+b.ph)>0.8)?1:0,imgs=unitImgs(b.t,m,f);
+  if(a||jig){const ww=16+a*2,hh=16-a*2-jig;for(const im of imgs)ctx.drawImage(im,x-a,y+16-hh,ww,hh)}
+  else{ctx.drawImage(imgs[0],x,y);if(imgs[1])ctx.drawImage(imgs[1],x,y+((b.sq>0.2||Math.sin(T*3+b.ph)>0.75)?1:0))}
 }
+function sameAt(r,c,b){if(r<0||r>=ROWS||c<0||c>=COLS)return false;const n=grid[r][c];
+  return !!n&&n.t===b.t&&b.t!==STAR&&n.oy===0&&b.oy===0&&!!n.pop===!!b.pop}
+function maskAt(r,c,b){return (sameAt(r-1,c,b)?1:0)|(sameAt(r,c+1,b)?2:0)|(sameAt(r+1,c,b)?4:0)|(sameAt(r,c-1,b)?8:0)}
 function blockFace(b){if(feverT>0)return 2;return ((T+b.ph)%3.6)<0.13?1:0}
 function ghostCells(){
   const cs=cells(cur).sort((a,b)=>b.y-a.y),occ=new Set(),out=[];
@@ -639,16 +678,19 @@ function render(){
   // spawn X
   {const x=fx+SPAWN_X*CELL+4,y=fy+4;ctx.fillStyle=danger()&&Math.floor(T*4)%2?'#ff3050':'#4a2050';for(let i=0;i<8;i++){ctx.fillRect(x+i,y+i,1,1);ctx.fillRect(x+7-i,y+i,1,1)}}
   if(grid){
-    for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){const b=grid[r][c];if(b)drawBlock(b,BX+c*CELL,BY+r*CELL+Math.round(b.oy),blockFace(b))}
+    for(let r=0;r<ROWS;r++)for(let c=0;c<COLS;c++){const b=grid[r][c];if(b)drawBlock(b,BX+c*CELL,BY+r*CELL+Math.round(b.oy),blockFace(b),maskAt(r,c,b))}
+    for(let r=0;r<ROWS-1;r++)for(let c=0;c<COLS-1;c++){const b=grid[r][c];if(!b||b.t===STAR||(b.pop&&Math.floor(phaseT/0.06)%2===0))continue;
+      if(sameAt(r,c+1,b)&&sameAt(r+1,c,b)&&sameAt(r+1,c+1,b)&&b.oy===0){ctx.fillStyle=PAL[b.t].n;ctx.fillRect(BX+(c+1)*CELL-3,BY+(r+1)*CELL-3,6,6)}}
     if(cur&&state!=='over'){
-      ctx.globalAlpha=0.3;for(const g of ghostCells())ctx.drawImage(spr(g.t,0),BX+g.x*CELL,BY+g.y*CELL);ctx.globalAlpha=1;
+      ctx.globalAlpha=0.3;for(const g of ghostCells())drawUnit(g.t,BX+g.x*CELL,BY+g.y*CELL);ctx.globalAlpha=1;
       const px=BX+Math.round(cur.rx),py=BY+Math.round(cur.ry);
       const ox=Math.round(Math.sin(cur.ang)*CELL),oy=Math.round(-Math.cos(cur.ang)*CELL);
-      ctx.drawImage(spr(cur.b,0),px+ox,py+oy);ctx.drawImage(spr(cur.a,0),px,py);
+      let ma=0,mb=0;if(cur.a===cur.b&&cur.a!==STAR&&Math.abs(cur.ang-cur.angT)<0.05){const bit=[1,2,4,8][cur.rot];ma=bit;mb=[4,8,1,2][cur.rot]}
+      if(ma&&cur.rot===2){drawUnit(cur.a,px,py,0,ma);drawUnit(cur.b,px+ox,py+oy,0,mb)}else{drawUnit(cur.b,px+ox,py+oy,0,mb);drawUnit(cur.a,px,py,0,ma)}
       if(Math.floor(T*6)%2){ctx.fillStyle='#fff';ctx.fillRect(px+7,py-1,2,1)}
     }
   }
-  for(const d of dead)ctx.drawImage(spr(d.t,1),Math.round(d.x),Math.round(d.y));
+  for(const d of dead)drawUnit(d.t,Math.round(d.x),Math.round(d.y),3);
   drawSide();
   drawParts();
   for(const p of pops){if(p.t>p.life*0.75&&Math.floor(T*20)%2)continue;drawText(p.text,Math.round(p.x),Math.round(p.y),p.s,'#ffe45e',{al:'c',rb:p.rb})}
@@ -674,11 +716,11 @@ function drawSide(){
   drawText('NEXT',x,50,1,'#c8b6ff');
   panel(x,58,32,40);panel(x+36,58,30,40);
   if(queue){const a=queue[0],b=queue[1],bob=Math.round(Math.sin(T*4));
-    ctx.drawImage(spr(a.b,0),x+8,62+bob);ctx.drawImage(spr(a.a,0),x+8,78+bob);
-    ctx.drawImage(spr(b.b,0),x+47,70,8,8);ctx.drawImage(spr(b.a,0),x+47,78,8,8);}
+    drawUnit(a.b,x+8,62+bob);drawUnit(a.a,x+8,78+bob);
+    drawUnit(b.b,x+47,70,0,0,8);drawUnit(b.a,x+47,78,0,0,8);}
   drawText('LEVEL',x,106,1,'#c8b6ff');drawText(String(level),x,115,2,'#ffffff');
   drawText('MAX CHAIN',x,136,1,'#c8b6ff');drawText(String(maxChain),x,145,2,maxChain>=5?HUE[Math.floor(T*12)%12]:'#ffffff');
-  drawText('FEVER',x,168,1,feverT>0?HUE[Math.floor(T*12)%12]:'#c8b6ff');
+  drawText('BUFFET',x,168,1,feverT>0?HUE[Math.floor(T*12)%12]:'#c8b6ff');
   if(fever>=100||feverT>0)drawText(feverT>0?Math.ceil(feverT)+'S':'!!',176,168,1,'#fff',{al:'r'});
   // gauge
   const gx=x,gy=177,gw=66,gh=10;ring(gx,gy,gw,gh,'#05020f');ring(gx+1,gy+1,gw-2,gh-2,'#6a4cd0');ctx.fillStyle='#14082e';ctx.fillRect(gx+2,gy+2,gw-4,gh-4);
@@ -708,14 +750,15 @@ function drawOver(){
   if(overT<0.9)return;
   dim(Math.min(0.7,(overT-0.9)*2));
   frameBox(22,74,136,150,'#e6dcff','#7c5cff','#2e1a6e','rgba(14,6,40,0.95)');
-  drawText('GAME OVER',W/2,84,2,'#ff5c7a',{al:'c',wave:1});
+  drawText('HOSPITALIZED',W/2,84,2,'#ff5c7a',{al:'c',wave:1});
   drawText('SCORE',W/2,110,1,'#c8b6ff',{al:'c'});
   const st=fmt(score);drawText(st,W/2,120,textW(st,2)>128?1:2,'#ffe45e',{al:'c'});
   if(newRecord)drawText('NEW RECORD!!',W/2,141,1,'#fff',{al:'c',rb:true,wave:1});
   drawText('BEST '+fmt(best),W/2,156,1,'#8ef0ff',{al:'c'});
   drawText('MAX CHAIN '+maxChain,W/2,170,1,'#ffffff',{al:'c'});
   drawText('LEVEL '+level,W/2,182,1,'#ffffff',{al:'c'});
-  if(overT>1.2&&Math.floor(T*2.5)%2)drawText('TAP TO RETRY',W/2,204,1,'#ffe45e',{al:'c'});
+  drawText('DOCTOR ORDERS: DIET',W/2,194,1,'#8a7ab8',{al:'c'});
+  if(overT>1.2&&Math.floor(T*2.5)%2)drawText('TAP TO EAT AGAIN',W/2,208,1,'#ffe45e',{al:'c'});
   if(newRecord&&Math.random()<0.15)confetti(2);
 }
 
@@ -723,18 +766,15 @@ function drawOver(){
 const tBlobs=[...Array(16)].map(()=>({x:rnd(W-16),y:Math.random()*H,v:20+Math.random()*40,t:Math.random()<0.08?STAR:rnd(5),f:rnd(3)}));
 function updateTitle(dt){for(const b of tBlobs){b.y+=b.v*dt;if(b.y>H){b.y=-16;b.x=rnd(W-16);b.t=Math.random()<0.08?STAR:rnd(5)}}}
 function drawTitle(){
-  for(const b of tBlobs)ctx.drawImage(spr(b.t,b.f),Math.round(b.x),Math.round(b.y));
+  for(const b of tBlobs)drawUnit(b.t,Math.round(b.x),Math.round(b.y),b.f);
   dim(0.55);
-  const t1='DOPA',t2='DROP';
-  for(const [s,y,off] of [[t1,30,0],[t2,62,4]])for(let i=0;i<4;i++){
-    const g=glyph(s[i],4,HUE[(Math.floor(T*10)+i+off)%12],'#0b0618');
-    ctx.drawImage(g,W/2-47+i*24-1,y+Math.round(Math.sin(T*5+i*0.9+off)*3)-1)}
-  drawText('~ CHAIN POP PARTY ~',W/2,98,1,'#ffe45e',{al:'c'});
-  // demo row of blobs
-  for(let i=0;i<5;i++)ctx.drawImage(BLOB[i][Math.floor(T*2+i)%4===0?2:0],W/2-42+i*17,112+Math.round(Math.abs(Math.sin(T*6+i))*-4));
-  const L=[['MATCH 4 SAME COLOR = POP!','#ffffff'],['CHAINS = MEGA SCORE','#ffffff'],['STAR = COLOR BOMB','#fff2ad'],['FILL GAUGE = FEVER x3','#ff9cf6'],
+  const t1='POCCHARI';for(let i=0;i<8;i++){const g=glyph(t1[i],3,HUE[(Math.floor(T*10)+i)%12],'#0b0618');ctx.drawImage(g,W/2-70+i*18-1,26+Math.round(Math.sin(T*5+i*0.8)*2)-1)}
+  const t2='PANIC!';for(let i=0;i<6;i++){const g=glyph(t2[i],4,i%2?'#ffe45e':'#ff7a9a','#0b0618');ctx.drawImage(g,W/2-70+i*24-1,52+Math.round(Math.sin(T*9+i*1.3)*3)-1)}
+  drawText('~ CHUBBY CHAIN PARTY ~',W/2,90,1,'#ffe45e',{al:'c'});
+  for(let i=0;i<5;i++){const x=W/2-82+i*34,j=Math.round(Math.abs(Math.sin(T*6+i))*-4);drawUnit(i,x+9,104+j,Math.floor(T*2+i)%4===0?2:0);drawText(NAMES[i],x+17,122+(i%2)*8,1,PAL[i].l,{al:"c"})}
+  const L=[['MATCH 4 SAME FOOD = POP!','#ffffff'],['CHAIN = WORSE DISEASE','#ffffff'],['DONUT = CHEAT DAY BOMB','#fff2ad'],['FILL GAUGE = BUFFET x3','#ff9cf6'],
     ['',''],['< > MOVE    Z X TURN','#8ef0ff'],['DOWN SOFT  SPACE DROP','#8ef0ff'],['',''],['SWIPE MOVE   TAP TURN','#b8ffb4'],['FLICK DOWN = DROP','#b8ffb4']];
-  L.forEach(([s,c],i)=>{if(s)drawText(s,W/2,138+i*11,1,c,{al:'c'})});
+  L.forEach(([s,c],i)=>{if(s)drawText(s,W/2,140+i*11,1,c,{al:'c'})});
   if(Math.floor(T*2.5)%2)drawText('TAP OR PRESS ENTER',W/2,262,1,'#ffe45e',{al:'c'});
   drawText('HI '+fmt(best),W/2,282,1,'#c8b6ff',{al:'c'});
   drawText(muted?'SOUND OFF  (M)':'SOUND ON  (M)',W/2,300,1,muted?'#ff5c7a':'#8a7ab8',{al:'c'});
@@ -744,7 +784,7 @@ function drawTitle(){
 let last=performance.now();
 function frame(t){const dt=Math.max(0,Math.min(0.05,(t-last)/1000));last=t;T+=dt;update(dt);render();requestAnimationFrame(frame)}
 requestAnimationFrame(frame);
-window.__dd={get state(){return state},get score(){return score},get chain(){return maxChain},get grid(){return grid},get phase(){return phase},newGame,press,release,setGrid(g){grid=g},fever(){startFever()}};
+window.__dd={get state(){return state},get score(){return score},get chain(){return maxChain},get grid(){return grid},get phase(){return phase},newGame,press,release,setGrid(g){grid=g},get parts(){return parts},fever(){startFever()}};
 </script>
 </body>
 </html>
