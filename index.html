@@ -55,7 +55,7 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
 #ending{background:#04100a;z-index:3;gap:14px}
 .rollbox{height:150px;width:min(320px,100%);overflow:hidden;position:relative;border-top:2px solid #477b53;border-bottom:2px solid #477b53}
 .roll{position:absolute;left:0;right:0;top:100%;display:flex;flex-direction:column;align-items:center;gap:14px;animation:roll 14s linear forwards}
-@keyframes roll{to{transform:translateY(calc(-100% - 150px))}}
+@keyframes roll{to{transform:translateY(calc(-100% - 67px))}}
 .end-btns{display:flex;gap:12px;flex-wrap:wrap;justify-content:center}
 @media(prefers-reduced-motion:reduce){.roll{animation:none;top:0}}
 .opts{display:flex;flex-direction:column;gap:12px;width:min(340px,100%);padding:14px 12px;background:#0b2d1b;border:3px solid #477b53}
@@ -227,7 +227,7 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
   const REC = { bosses: {}, clears: 0, bestTime: 0, bestWave: 0, maxCombo: 0, bestClearRank: '' };
   try { Object.assign(REC, JSON.parse(localStorage.getItem('msb-records') || '{}')); } catch (e) {}
   const saveRec = () => { try { localStorage.setItem('msb-records', JSON.stringify(REC)); } catch (e) {} };
-  const RANK_ORDER = ['B', 'A', 'S', 'SS'];
+  const RANK_ORDER = ['C', 'B', 'A', 'S', 'SS'];
   const saveSet = () => { try { localStorage.setItem('msb-settings', JSON.stringify(SET)); } catch (e) {} };
   try { best = +localStorage.getItem('msb-best') || 0; } catch (e) {}
 
@@ -1026,11 +1026,16 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
     roll.style.animation = 'none'; void roll.offsetHeight; roll.style.animation = '';
     const sec = Math.round(S.playT / 60), time = Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
     const box = $('endStats'); box.replaceChildren();
-    for (const [k, v] of [['CLEAR TIME', time], ['HITS TAKEN', S.hits], ['MAX COMBO', S.maxCombo], ['SCORE', S.score.toLocaleString()]]) {
+    // クリアランク：被弾50点・クリアタイム30点・最大コンボ20点の100点満点
+    const hitPts = Math.max(0, 50 - 6 * S.hits);
+    const timePts = Math.round(sec <= 180 ? 30 : Math.max(0, 30 * (600 - sec) / 420));
+    const comboPts = Math.min(20, Math.floor(S.maxCombo / 10));
+    const total = hitPts + timePts + comboPts;
+    for (const [k, v] of [['CLEAR TIME', time + ' +' + timePts], ['HITS TAKEN', S.hits + ' +' + hitPts], ['MAX COMBO', S.maxCombo + ' +' + comboPts], ['TOTAL', total + ' / 100'], ['SCORE', S.score.toLocaleString()]]) {
       const a = document.createElement('div'), b = document.createElement('div');
       setPixel(a, k, 2, '#f7efc1'); setPixel(b, v, 2, '#ffe169'); box.append(a, b);
     }
-    const rk = S.hits === 0 ? ['SS', '#ffe169'] : S.hits <= 2 ? ['S', '#ffe169'] : S.hits <= 5 ? ['A', '#ff8c42'] : ['B', '#84d1ff'];
+    const rk = total >= 90 ? ['SS', '#ffe169'] : total >= 75 ? ['S', '#ffe169'] : total >= 55 ? ['A', '#ff8c42'] : total >= 35 ? ['B', '#84d1ff'] : ['C', '#b8ffbc'];
     REC.clears++; REC.bestWave = Math.max(REC.bestWave, S.wave); REC.maxCombo = Math.max(REC.maxCombo, S.maxCombo);
     if (!REC.bestTime || sec < REC.bestTime) REC.bestTime = sec;
     if (RANK_ORDER.indexOf(rk[0]) > RANK_ORDER.indexOf(REC.bestClearRank)) REC.bestClearRank = rk[0];
