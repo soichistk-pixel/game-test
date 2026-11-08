@@ -265,7 +265,7 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
   ];
   function buildBlocks() {
     S.blocks = [];
-    if (S.wave < 2 || S.wave % 5 === 0) return;
+    if (S.wave < 2 || S.wave % 4 === 0 || (S.wave === 17 && !S.allClear)) return;
     const L = S.wave <= 4 ? LAYOUTS[S.wave - 2] : LAYOUTS[Math.random() * LAYOUTS.length | 0];
     for (const [type, fx, fy, w] of L) {
       const y = snap(Math.max(130, Math.min(GROUND - 170, H * fy))), x = snap(W * fx - w / 2);
@@ -338,6 +338,7 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
       if (b.dead || b.hp <= 0) continue;
       const r = RAD[b.t];
       if (Math.abs(b.x - x) < r + 6 && b.y + r > top) {
+        if (b.bossType === 'pudding' && puddingGuard()) continue;
         b.hp -= S.up.dmg * 0.5 * (S.fever ? 1.5 : 1); b.flash = Math.max(b.flash, 0.6);
         if (Math.random() < 0.3) S.parts.push({ k: 'spark', x: x + (Math.random() - .5) * 10, y: b.y + r * .6, vx: (Math.random() - .5) * 3, vy: -Math.random() * 2, r: 5, t: 0, life: 10 });
       }
@@ -398,6 +399,76 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
   function rindCovers(a) {
     const t = ((a % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
     return !(t < RIND_GAP || (t > Math.PI && t < Math.PI + RIND_GAP));
+  }
+  // ---- PUDDING GENERAL：ツヤ状態では真上からの弾を跳ね返し、斜めからの弾だけが刺さる ----
+  const ANGLE_MIN = 0.15; // 約9°
+  function spawnPudding() {
+    const b = mkBubble(5, W / 2, -160, 1, 0);
+    b.boss = true; b.bossType = 'pudding'; b.name = 'PUDDING GENERAL'; b.attached = true;
+    b.hp = b.max = Math.ceil(hpFor(4) * 40);
+    S.pudding = { body: b, t: 0, enter: 80, phase: 1, cyc: 0, state: 'calm', st: 90, crack: 0, open: 0, dripCd: 90, hinted: false, lastTxt: -99, refl: 0 };
+    S.bubbles.push(b); S.boss = b; S.queue = []; S.qT = 0; S.seeds = [];
+    S.banner = { text: 'BOSS!!', sub: 'PUDDING GENERAL APPEARS', t: 0, dur: 110, col: '#ffd96b' };
+    sfx.bossIn(); bgm.boss(true); buzz([100, 60, 100]);
+  }
+  // ツヤで弾を防いでいるか（第2形態はカラメルが割れている間だけ防げない）
+  function puddingGuard() {
+    const P = S.pudding;
+    if (!P) return false;
+    return P.phase === 2 ? P.open <= 0 : P.state === 'shine';
+  }
+  // 弾が当たったときの倍率。0なら跳ね返し
+  function puddingHit(b, bl, hx, hy) {
+    const P = S.pudding;
+    if (!P || !puddingGuard()) return 1;
+    // 扇の広がりではなく、自機を動かしてつけた傾きだけで判定する
+    const ang = Math.abs(bl.tilt || 0);
+    if (ang < ANGLE_MIN) {
+      if (++P.refl % 8 === 0 && S.seeds.filter(x => x.col === '#ffe9a8').length < 12) S.seeds.push({ x: hx, y: hy + 6, vx: -bl.vx * 0.4 + (Math.random() - 0.5), vy: 3.6, g: 0, col: '#ffe9a8' });
+      S.parts.push({ k: 'spark', x: hx, y: hy, vx: 0, vy: 0, r: 5, t: 0, life: 8 });
+      if (frameNo - P.lastTxt > 40) { P.lastTxt = frameNo; S.texts.push({ x: hx, y: hy + 20, text: 'REFLECT!', t: 0, col: '#ffe9a8', size: 14 }); }
+      sfx.clang();
+      return 0;
+    }
+    if (P.phase === 2 && ++P.crack >= 45) {
+      P.crack = 0; P.open = 120;
+      S.banner = { text: 'CRACK!', sub: 'CARAMEL BROKEN', t: 0, dur: 60, col: '#ffd96b' };
+      S.shake = Math.max(S.shake, 12); sfx.ice(); buzz(40);
+    }
+    if (frameNo - P.lastTxt > 30) { P.lastTxt = frameNo; S.texts.push({ x: hx, y: hy + 20, text: 'ANGLE!', t: 0, col: '#ffd96b', size: 14 }); }
+    return 1.5;
+  }
+  function updatePudding() {
+    const P = S.pudding;
+    if (!P) return;
+    const b = P.body;
+    if (b.dead) { S.pudding = null; return; }
+    if (P.phase === 1 && b.hp / b.max < 0.5) {
+      P.phase = 2; P.state = 'shine'; P.open = 0; P.crack = 0;
+      S.banner = { text: 'PUCCHIN!', sub: 'CARAMEL SIDE DOWN', t: 0, dur: 100, col: '#ffd96b' };
+      S.shake = Math.max(S.shake, 22); S.flash = 0.5; S.flashCol = '255,217,107'; sfx.bossIn(); buzz([60, 40, 140]);
+    }
+    if (!S.freezeT) {
+      P.t++;
+      if (P.enter > 0) P.enter--;
+      else if (P.phase === 1) {
+        if (--P.st <= 0) {
+          if (P.state === 'calm') { P.state = 'warn'; P.st = 45; sfx.charge(); }
+          else if (P.state === 'warn') {
+            P.state = 'shine'; P.st = 190;
+            if (!P.hinted) { P.hinted = true; S.banner = { text: 'SHINE!', sub: 'MOVE AND SHOOT AT AN ANGLE', t: 0, dur: 110, col: '#ffe9a8' }; }
+          } else { P.state = 'calm'; P.st = 220; }
+        }
+      } else {
+        if (P.open > 0) P.open--;
+        if (--P.dripCd <= 0) { S.seeds.push({ x: b.x + (Math.random() - 0.5) * 80, y: b.y + 50, vx: 0, vy: 2.6, g: 0, col: '#b5651d' }); P.dripCd = 55; }
+      }
+    }
+    const sway = P.phase === 2 ? W / 2 - 80 : W / 2 - 100;
+    b.x = W / 2 + Math.sin(P.t * (P.phase === 2 ? 0.013 : 0.009)) * sway;
+    b.y = (P.phase === 2 ? 260 : 225) + Math.sin(P.t * 0.05) * 4 - P.enter * 5;
+    b.vx = 0; b.vy = 0;
+    b.sq = Math.sin(P.t * 0.18) * 0.25;
   }
   function spawnMelonLord() {
     const b = mkBubble(5, W / 2, -160, 1, 0);
@@ -613,12 +684,14 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
   function nextWave() {
     S.wave++;
     buildBlocks();
-    if (S.wave === 16 && !S.allClear) { S.blocks = []; spawnCreamTitan(); return; }
+    if (S.wave === 17 && !S.allClear) { S.blocks = []; spawnCreamTitan(); return; }
     // 5ウェーブごとにボス
-    const bossNo = S.wave % 5 === 0 ? (S.wave / 5 - 1) % 3 : -1;
+    // 4面ごとにボス：チェリー → グレープ → メロン → プリン をくり返す
+    const bossNo = S.wave % 4 === 0 ? (S.wave / 4 - 1) % 4 : -1;
     if (bossNo === 1) { spawnGrapeKing(); return; }
     if (bossNo === 2) { spawnMelonLord(); return; }
-    if (S.wave % 5 === 0) {
+    if (bossNo === 3) { spawnPudding(); return; }
+    if (bossNo === 0) {
       const b = mkBubble(5, W / 2, -RAD[5], 1, 2);
       b.boss = true; b.bossType = 'cherry'; b.name = 'KING CHERRY'; b.vx *= 0.7; b.hp = b.max = Math.ceil(hpFor(4) * 26); b.next = 0.8;
       S.bubbles.push(b); S.boss = b; S.queue = []; S.qT = 0;
@@ -701,7 +774,7 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
   }
   function bossDown(b) {
     if (b.bossType) { REC.bosses[b.bossType] = true; saveRec(); }
-    S.boss = null; S.grape = null; S.melon = null; S.cherry = null; S.seeds = []; bgm.boss(false);
+    S.boss = null; S.grape = null; S.melon = null; S.cherry = null; S.pudding = null; S.seeds = []; bgm.boss(false);
     if (b.bossType === 'titan') {
       S.titan = null; S.drips = []; S.puddles = []; S.allClear = true; S.fw = 240;
       S.freeze = 24; S.slow = 140; S.shake = 36; S.flash = 1; S.flashCol = '255,243,214';
@@ -822,7 +895,7 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
       S.px = Math.max(18, Math.min(W - 18, S.px)); S.tx = Math.max(18, Math.min(W - 18, S.tx));
       // 慣性で発射の向きが傾く：動く速さに合わせて最大30°、止まると約0.4秒で真上に戻る
       const vel = S.px - S.lastPx; S.lastPx = S.px;
-      S.tilt += (Math.max(-0.52, Math.min(0.52, vel * 0.07)) - S.tilt) * 0.12;
+      S.tilt += (Math.max(-0.52, Math.min(0.52, vel * 0.09)) - S.tilt) * 0.12;
       // 連射
       let rate = S.up.rate; if (S.power.rapid) rate = Math.max(2, Math.round(rate * 0.55)); if (S.fever) rate = Math.max(2, Math.round(rate * 0.6));
       if (S.power.beam) updateBeam();
@@ -832,7 +905,7 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
         const spread = 0.09 + (S.power.spread ? 0.05 : 0);
         for (let i = 0; i < n; i++) {
           const a = (i - (n - 1) / 2) * spread + S.tilt;
-          S.bullets.push({ x: S.px + Math.sin(a) * 6, y: GROUND - 44, vx: Math.sin(a) * 13, vy: -Math.cos(a) * 13, pierce: S.up.pierce + (S.fever ? 1 : 0), hit: null, fever: !!S.fever });
+          S.bullets.push({ x: S.px + Math.sin(a) * 6, y: GROUND - 44, vx: Math.sin(a) * 13, vy: -Math.cos(a) * 13, pierce: S.up.pierce + (S.fever ? 1 : 0), hit: null, fever: !!S.fever, tilt: S.tilt });
         }
         S.recoil = 1; sfx.shot();
       }
@@ -873,8 +946,10 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
         const u = Math.max(0, Math.min(1, ((b.x - x0) * dx + (b.y - y0) * dy) / (dx * dx + dy * dy || 1)));
         const hx = x0 + u * dx, hy = y0 + u * dy;
         if ((hx - b.x) ** 2 + (hy - b.y) ** 2 <= r * r) {
+          let pm = 1;
+          if (b.bossType === 'pudding') { pm = puddingHit(b, bl, hx, hy); if (pm === 0) { bl.dead = true; break; } }
           const just = playing && Math.abs(hx - b.x) < RAD[b.t] * 0.28 && !b.justCd;
-          const damage = S.up.dmg * (bl.fever ? 1.5 : 1) * (just ? 1.4 : 1);
+          const damage = S.up.dmg * (bl.fever ? 1.5 : 1) * (just ? 1.4 : 1) * pm;
           b.hp -= damage; b.flash = 1; b.vy -= 0.12;
           bl.hit = b;
           S.parts.push({ k: 'spark', x: hx, y: hy, vx: 0, vy: 0, r: 5, t: 0, life: 8 });
@@ -894,7 +969,7 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
       if (bl.y < -20 || bl.x < -20 || bl.x > W + 20) bl.dead = true;
     }
     S.bullets = S.bullets.filter(b => !b.dead);
-    if (playing) { updateGrape(); updateMelon(); updateTitan(); updateSeeds(); updateDrips(); updateCherry(); S.playT++; }
+    if (playing) { updateGrape(); updateMelon(); updatePudding(); updateTitan(); updateSeeds(); updateDrips(); updateCherry(); S.playT++; }
     updateFireworks();
 
     // 泡
@@ -1023,7 +1098,7 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
     if (isBest) { best = S.score; try { localStorage.setItem('msb-best', String(best)); } catch (e) {} }
     setPixel($('endTitle'), 'ALL CLEAR!', 4, '#ffe169');
     const roll = $('roll'); roll.replaceChildren();
-    for (const [t, c] of [['MELON SODA BURST', '#ffe169'], ['', ''], ['DIRECTOR', '#9dd8b3'], ['YOU', '#f7efc1'], ['', ''], ['PROGRAM', '#9dd8b3'], ['CLAUDE', '#f7efc1'], ['', ''], ['MUSIC', '#9dd8b3'], ['BGM LAB + YOU', '#f7efc1'], ['', ''], ['BOSSES', '#9dd8b3'], ['KING CHERRY', '#f24d6b'], ['GRAPE KING', '#b98cff'], ['MELON LORD', '#8fd46a'], ['CREAM TITAN', '#fff3d6'], ['', ''], ['THANK YOU FOR PLAYING!', '#ffe169']]) {
+    for (const [t, c] of [['MELON SODA BURST', '#ffe169'], ['', ''], ['DIRECTOR', '#9dd8b3'], ['YOU', '#f7efc1'], ['', ''], ['PROGRAM', '#9dd8b3'], ['CLAUDE', '#f7efc1'], ['', ''], ['MUSIC', '#9dd8b3'], ['BGM LAB + YOU', '#f7efc1'], ['', ''], ['BOSSES', '#9dd8b3'], ['KING CHERRY', '#f24d6b'], ['GRAPE KING', '#b98cff'], ['MELON LORD', '#8fd46a'], ['PUDDING GENERAL', '#ffd96b'], ['CREAM TITAN', '#fff3d6'], ['', ''], ['THANK YOU FOR PLAYING!', '#ffe169']]) {
       const el = document.createElement('div'); if (t) setPixel(el, t, 2, c); else el.style.height = '8px'; roll.appendChild(el);
     }
     roll.style.animation = 'none'; void roll.offsetHeight; roll.style.animation = '';
@@ -1113,8 +1188,8 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
     initAudio(); bgm.start();
     const fmtT = v => v ? Math.floor(v / 60) + ':' + String(v % 60).padStart(2, '0') : '--:--';
     const box = $('recStats'); box.replaceChildren();
-    const nB = ['cherry', 'grape', 'melon', 'titan'].filter(k => REC.bosses[k]).length;
-    for (const [k, v] of [['HI SCORE', best.toLocaleString()], ['BEST WAVE', REC.bestWave || '-'], ['MAX COMBO', REC.maxCombo || '-'], ['BOSSES', nB + ' / 4'],
+    const nB = ['cherry', 'grape', 'melon', 'pudding', 'titan'].filter(k => REC.bosses[k]).length;
+    for (const [k, v] of [['HI SCORE', best.toLocaleString()], ['BEST WAVE', REC.bestWave || '-'], ['MAX COMBO', REC.maxCombo || '-'], ['BOSSES', nB + ' / 5'],
       ['ALL CLEARS', REC.clears], ['BEST CLEAR TIME', fmtT(REC.bestTime)], ['BEST CLEAR RANK', REC.bestClearRank || '-']]) {
       const a = document.createElement('div'), b = document.createElement('div');
       setPixel(a, k, 2, '#f7efc1'); setPixel(b, v, 2, '#ffe169'); box.append(a, b);
@@ -1646,7 +1721,35 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
         pxRect(g,-r*.3,-r*.55,4,4,'#ffffff');
       });
     });
-    return {bubble,boss,player,flash,fizz,grape,grapeCore,melon,cream,titan};
+    // プリン将軍：0=通常 1=ひっくり返った（カラメルが下）
+    const pudding=[0,1].map(flip=>makeSprite(170,150,g=>{
+      g.translate(85,78);
+      const top=-46,bot=46;
+      for(let y=top;y<bot;y+=4){
+        const k=(y-top)/(bot-top),half=Math.round((flip?70-28*k:42+28*k)/4)*4;
+        const cap=flip?y>bot-22:y<top+20;
+        let c=cap?'#7a3e14':'#ffd96b';
+        if(!cap&&(y-top)%16<4)c='#f5c94e';
+        for(let x=-half;x<half;x+=4){
+          let cc=c;
+          if(!cap&&x<-half+8)cc='#fff0a8';
+          if(!cap&&x>half-8)cc='#e0aa36';
+          if(cap&&x<-half+10)cc='#9a5520';
+          pxRect(g,x,y,4,4,cc);
+        }
+      }
+      // カラメルのしずく
+      for(const dx of[-30,-6,22]){if(flip)pxRect(g,dx,bot-26,6,8,'#7a3e14');else pxRect(g,dx,top+20,6,10,'#7a3e14');}
+      // 顔と、将軍のひげと肩章
+      const ey=flip?-14:-2;
+      pxRect(g,-22,ey,10,10,'#160818');pxRect(g,12,ey,10,10,'#160818');pxRect(g,-20,ey+2,4,4,'#ffffff');pxRect(g,14,ey+2,4,4,'#ffffff');
+      pxRect(g,-26,ey-8,16,4,'#5a3a1a');pxRect(g,10,ey-8,16,4,'#5a3a1a');
+      pxRect(g,-20,ey+16,40,6,'#5a3a1a');pxRect(g,-26,ey+18,8,4,'#5a3a1a');pxRect(g,18,ey+18,8,4,'#5a3a1a');
+      const sy=flip?-20:20;
+      pxRect(g,-66+(flip?0:14),sy,14,6,'#ffe169');pxRect(g,52-(flip?0:14),sy,14,6,'#ffe169');
+      pxRect(g,-62+(flip?0:14),sy+6,4,6,'#ffe169');pxRect(g,58-(flip?0:14),sy+6,4,6,'#ffe169');
+    }));
+    return {bubble,boss,player,flash,fizz,grape,grapeCore,melon,cream,titan,pudding};
   })();
   // ロゴ：枠なし。後ろで炭酸の泡が立ち上る
   const logoFizz = Array.from({ length: 22 }, () => ({ x: Math.random() * 320, y: Math.random() * 120, v: 0.3 + Math.random() * 0.6, s: 2 + (Math.random() * 2 | 0) * 2 }));
@@ -1678,7 +1781,7 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
       g.globalCompositeOperation = 'source-over'; pixText(g, '?', src.width / 2, src.height / 2 - 21, 6, '#8fd4a0', 'center');
     });
     // [キー, 絵, 横位置, 縮尺, 揺れ方]
-    const L = [['cherry', cherry, 46, 0.4, 'hop'], ['grape', grape, 112, 0.34, 'sway'], ['titan', titan, 190, 0.36, 'bob'], ['melon', melon, 270, 0.4, 'sway']];
+    const L = [['cherry', cherry, 34, 0.34, 'hop'], ['grape', grape, 92, 0.3, 'sway'], ['titan', titan, 160, 0.36, 'bob'], ['melon', melon, 228, 0.34, 'sway'], ['pudding', spriteBank.pudding[0], 288, 0.36, 'jiggle']];
     return L.map(([key, img, x, sc, mv]) => ({ key, img, sil: shadow(img), x, sc, mv }));
   })();
   function paintLineup(id, t) {
@@ -1691,11 +1794,10 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
       let dy = 0, dx = 0;
       if (b.mv === 'hop') dy = -Math.round(Math.abs(Math.sin(t / 380 + i)) * 10);
       else if (b.mv === 'sway') dx = Math.round(Math.sin(t / 700 + i) * 3);
+      else if (b.mv === 'jiggle') dx = Math.round(Math.sin(t / 120) * 2);
       else dy = Math.round(Math.sin(t / 900) * 2);
       g.drawImage(img, Math.round(b.x - w / 2 + dx), 150 - h + dy, w, h);
     });
-    const pl = spriteBank.player[0];
-    g.drawImage(pl, 296 - 12, 150 - 32, 24, 32);
   }
   (function titleLoop(t) {
     if (!$('title').hidden) { paintTitleArt(); paintLineup('lineup', t); }
@@ -1722,6 +1824,30 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
     const g=ctx,r=RAD[b.t];
     g.save();g.translate(snap(b.x),snap(b.y));
     g.scale(1+.18*b.sq,1-.18*b.sq);
+    if(b.bossType==='pudding'){
+      const P=S.pudding,sp=spriteBank.pudding[P&&P.phase===2?1:0];
+      g.drawImage(sp,-85,-78);
+      if(b.flash>.05){g.globalAlpha=b.flash*.45;const f=spriteBank.flash[5];g.drawImage(f,-f.width/2,-f.height/2);g.globalAlpha=1}
+      if(P){
+        const guard=puddingGuard(),warn=P.state==='warn'&&frameNo%10<5;
+        if(guard||warn){
+          // ツヤ：斜めの白い光の帯が流れる
+          // 体の形（台形）の内側だけに、斜めの光の帯を流す
+          const off=(frameNo*3)%200-100,c1='rgba(255,255,255,'+(warn?.35:.65)+')',c2='rgba(255,255,255,'+(warn?.2:.4)+')';
+          for(let y=-40;y<40;y+=6){
+            const k=(y+46)/92,half=P.phase===2?70-28*k:42+28*k,x=Math.round((off-y*0.6)/2)*2;
+            if(Math.abs(x)<half-8)pxRect(g,x,y,6,6,c1);
+            if(Math.abs(x+14)<half-8)pxRect(g,x+14,y,4,6,c2);
+          }
+        }
+        if(P.phase===2){
+          const n=Math.floor(P.crack/9);
+          for(let i=0;i<n;i++)pxRect(g,-40+i*16,30+(i%2)*4,4,10,'#2a1206');
+          if(P.open>0&&frameNo%8<4)pxRect(g,-60,24,120,4,'#ffffff');
+        }
+      }
+      g.restore();return;
+    }
     if(b.bossType==='titan'){
       const sp=spriteBank.titan[b.attached?0:1];g.drawImage(sp,-sp.width/2,-96);
       if(b.flash>.05){const f=spriteBank.flash[4];g.globalAlpha=b.flash*.5;g.drawImage(f,-f.width/2,-f.height/2);g.globalAlpha=1}
