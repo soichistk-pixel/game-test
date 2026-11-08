@@ -236,7 +236,7 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
       score: 0, wave: 0, lives: 3, combo: 0, comboT: 0, maxCombo: 0, comboPop: 0,
       rush: 0, justs: 0, grazes: 0, burstCount: 0, burstFx: null,
       fever: 0, feverG: 0, feverLen: 360,
-      up: { rate: 5, shots: 1, dmg: 1, pierce: 0 }, power: { spread: 0, rapid: 0, beam: 0 }, freezeT: 0, beamTop: 0, blocks: [],
+      up: { rate: 5, shots: 1, dmg: 1, pierce: 0 }, power: { spread: 0, rapid: 0, beam: 0 }, freezeT: 0, beamLen: 0, blocks: [],
       px: W / 2, tx: W / 2, tilt: 0, lastPx: W / 2, recoil: 0, fireT: 0, inv: 0,
       lastJustStop: -99, seeds: [], drips: [], puddles: [], hits: 0, playT: 0, fw: 0, bubbles: [], bullets: [], parts: [], texts: [], drops: [], queue: [], qT: 0,
       shake: 0, freeze: 0, slow: 0, flash: 0, flashCol: '255,255,255', clearT: 0, banner: null
@@ -265,7 +265,7 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
   ];
   function buildBlocks() {
     S.blocks = [];
-    if (S.wave < 2 || S.wave % 4 === 0 || (S.wave === 17 && !S.allClear)) return;
+    if (S.wave < 2 || S.wave % 4 === 0 || (S.wave === 21 && !S.allClear)) return;
     const L = S.wave <= 4 ? LAYOUTS[S.wave - 2] : LAYOUTS[Math.random() * LAYOUTS.length | 0];
     for (const [type, fx, fy, w] of L) {
       const y = snap(Math.max(130, Math.min(GROUND - 170, H * fy))), x = snap(W * fx - w / 2);
@@ -314,7 +314,7 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
     const R0 = RAD[b.t] + 70;
     for (const o of S.bubbles) {
       if (o === b || o.dead || o.hp <= 0) continue;
-      if (Math.hypot(o.x - b.x, o.y - b.y) < R0 + RAD[o.t]) { o.hp -= o.boss ? o.max * 0.08 : o.max * 0.6; o.flash = 1; o.vy -= 2; }
+      if (Math.hypot(o.x - b.x, o.y - b.y) < R0 + RAD[o.t]) { o.hp -= o.boss || o.lemonTwin ? o.max * 0.08 : o.max * 0.6; o.flash = 1; o.vy -= 2; }
     }
     for (const k of S.blocks) if (Math.abs(k.x + k.w / 2 - b.x) < R0 + k.w / 2 && Math.abs(k.y + k.h / 2 - b.y) < R0) damageIce(k, k.max * 0.7);
     for (let i = 0; i < 3; i++) S.parts.push({ k: 'ring', x: b.x, y: b.y, r: RAD[b.t] + i * 14, grow: 5 + i * 2, col: i % 2 ? '#ff8c42' : '#ffe169', t: 0, life: 16 });
@@ -322,26 +322,33 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
     S.shake = Math.max(S.shake, 14); S.freeze = Math.max(S.freeze, 4); S.flash = Math.max(S.flash, 0.3); S.flashCol = '255,140,66';
     sfx.boom(); buzz(40);
   }
-  // レーザービーム：自機から真上へ、最初に当たるブロックまで届く
+  // レーザー：普通の弾の1.3倍の火力。慣性で傾いてなぎ払え、ブロックを貫く（メロンの盾だけは貫かない）
+  function beamGeom() {
+    const ang = S.tilt, ox = S.px, oy = GROUND - 44, dx = Math.sin(ang), dy = -Math.cos(ang);
+    const shots = S.up.shots + (S.power.spread ? 2 : 0) + (S.fever ? 2 : 0);
+    return { ang, ox, oy, dx, dy, shots, half: 6 + shots * 2 };
+  }
   function updateBeam() {
-    const x = S.px;
-    let top = 0, blocker = null;
-    for (const k of S.blocks) if (!k.dead && x > k.x - 6 && x < k.x + k.w + 6 && k.y + k.h > top) { top = k.y + k.h; blocker = k; }
+    const G = beamGeom(), { ang, ox, oy, dx, dy, half } = G;
+    let rate = S.up.rate; if (S.fever) rate = Math.max(2, Math.round(rate * 0.6));
+    const dpf = 1.3 * S.up.dmg * G.shots / rate * (S.fever ? 1.5 : 1);
+    let len = (oy + 40) / Math.max(0.3, -dy);
     const M = S.melon;
-    if (M && !M.body.dead && Math.abs(x - M.body.x) < RIND_R) {
-      const dx = x - M.body.x, ry = M.body.y + Math.sqrt(RIND_R * RIND_R - dx * dx);
-      if (rindCovers(Math.atan2(ry - M.body.y, dx) - M.rot) && ry > top) { top = ry; blocker = null; }
-    }
-    S.beamTop = top;
-    if (blocker) damageIce(blocker, S.up.dmg * 0.5);
+    if (M && !M.body.dead) for (let d = 0; d < len; d += 6) if (rindBlocks(ox + dx * d, oy + dy * d)) { len = d; break; }
+    S.beamLen = len;
+    // 氷はまとめて一気に溶かす。金属は素通り
+    const melted = new Set();
+    for (let d = 0; d < len; d += 6) { const k = blockAt(ox + dx * d, oy + dy * d); if (k && !melted.has(k)) { melted.add(k); damageIce(k, dpf * 3); } }
     for (const b of S.bubbles) {
       if (b.dead || b.hp <= 0) continue;
       const r = RAD[b.t];
-      if (Math.abs(b.x - x) < r + 6 && b.y + r > top) {
-        if (b.bossType === 'pudding' && puddingGuard()) continue;
-        b.hp -= S.up.dmg * 0.5 * (S.fever ? 1.5 : 1); b.flash = Math.max(b.flash, 0.6);
-        if (Math.random() < 0.3) S.parts.push({ k: 'spark', x: x + (Math.random() - .5) * 10, y: b.y + r * .6, vx: (Math.random() - .5) * 3, vy: -Math.random() * 2, r: 5, t: 0, life: 10 });
-      }
+      const t = Math.max(0, Math.min(len, (b.x - ox) * dx + (b.y - oy) * dy));
+      const px = ox + dx * t, py = oy + dy * t;
+      if ((b.x - px) ** 2 + (b.y - py) ** 2 >= (r + half) ** 2) continue;
+      let m = 1;
+      if (b.bossType === 'pudding' && puddingGuard()) { if (Math.abs(ang) < ANGLE_MIN) continue; m = 1.5; }
+      b.hp -= dpf * m; b.flash = Math.max(b.flash, 0.6);
+      if (Math.random() < 0.3) S.parts.push({ k: 'spark', x: px + (Math.random() - .5) * half, y: py, vx: (Math.random() - .5) * 3, vy: -Math.random() * 2, r: 5, t: 0, life: 10 });
     }
     if (S.power.beam % 5 === 0) sfx.beam();
   }
@@ -667,7 +674,66 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
       sfx.pop(10 + (S.fw % 5), 2);
     }
   }
+  // ---- LEMON TWINS：片方を倒すと5秒のDOWN。その間にもう片方を倒せば撃破、間に合わなければ半分で復活 ----
+  function spawnLemonTwins() {
+    const mk2 = (x, dir) => {
+      const b = mkBubble(4, x, -60, dir, 2);
+      b.lemonTwin = true; b.hp = b.max = Math.ceil(hpFor(4) * 20); b.down = 0; b.sprayCd = 120 + Math.random() * 60;
+      return b;
+    };
+    const a = mk2(W * 0.3, 1), b = mk2(W * 0.7, -1);
+    a.boss = true; a.bossType = 'lemon'; a.name = 'LEMON TWINS'; b.flipX = true;
+    S.lemon = { a, b, hinted: false };
+    S.bubbles.push(a, b); S.boss = a; S.queue = []; S.qT = 0; S.seeds = [];
+    S.banner = { text: 'BOSS!!', sub: 'LEMON TWINS APPEAR', t: 0, dur: 110, col: '#ffe86a' };
+    sfx.bossIn(); bgm.boss(true); buzz([100, 60, 100]);
+  }
+  function lemonPartner(b) { const L = S.lemon; return L ? (b === L.a ? L.b : L.a) : null; }
+  function lemonDown(b) {
+    b.down = 300; b.hp = 1; b.ctrl = true; b.vx = 0; b.vy = 0;
+    S.texts.push({ x: b.x, y: b.y - 60, text: 'DOWN!', t: 0, col: '#ffe86a', size: 20 });
+    if (!S.lemon.hinted) { S.lemon.hinted = true; S.banner = { text: 'TWIN DOWN!', sub: 'POP THE OTHER IN 5 SEC', t: 0, dur: 100, col: '#ffe86a' }; }
+    S.shake = Math.max(S.shake, 10); sfx.hurt(); buzz(40);
+  }
+  function lemonPop(b) {
+    for (let i = 0; i < 40; i++) { const a = Math.random() * Math.PI * 2, sp = 2 + Math.random() * 7; S.parts.push({ k: 'drop', x: b.x, y: b.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 2, r: 3 + Math.random() * 4, col: i % 2 ? '#ffe86a' : '#fff7b0', t: 0, life: 50 }); }
+    S.parts.push({ k: 'ring', x: b.x, y: b.y, r: 20, grow: 6, col: '#ffe86a', t: 0, life: 22 });
+  }
+  function updateLemon() {
+    const L = S.lemon;
+    if (!L) return;
+    if (L.a.dead) { S.lemon = null; return; }
+    for (const b of [L.a, L.b]) {
+      if (b.dead) continue;
+      const r = RAD[b.t], o = lemonPartner(b);
+      if (b.down > 0) {
+        // 倒れている間は無敵で床に転がる
+        b.hp = 1; b.vx = 0; b.vy = 0; b.sq = 1;
+        b.y += (GROUND - r * 0.55 - b.y) * 0.3;
+        if (!S.freezeT && --b.down <= 0) {
+          b.hp = Math.ceil(b.max * 0.5); b.ctrl = false; b.vy = -9; b.vx = (Math.random() < 0.5 ? -1 : 1) * 1.5;
+          S.texts.push({ x: b.x, y: b.y - 60, text: 'REVIVE!', t: 0, col: '#f24d6b', size: 22 });
+          S.shake = Math.max(S.shake, 12); sfx.bossIn();
+        }
+        continue;
+      }
+      // 相方が倒れている間は怒って速くなる
+      const rage = o && !o.dead && o.down > 0;
+      if (rage && Math.abs(b.vx) < 2.2) b.vx = Math.sign(b.vx || 1) * 2.2;
+      if (!S.freezeT && --b.sprayCd <= 0) {
+        b.sprayCd = rage ? 60 : 160;
+        const base = Math.atan2(GROUND - 30 - b.y, S.px - b.x);
+        for (let i = 0; i < 3; i++) { const a = base + (i - 1) * 0.25; S.seeds.push({ x: b.x, y: b.y + 20, vx: Math.cos(a) * 3.4, vy: Math.sin(a) * 3.4, g: 0, col: '#fff27a' }); }
+        sfx.seed();
+      }
+    }
+  }
   function bossFrac() {
+    const LM = S.lemon;
+    if (LM) {
+      const hpOf = b => b.dead || b.down > 0 ? 0 : Math.max(0, b.hp);
+      return (hpOf(LM.a) + hpOf(LM.b)) / (LM.a.max + LM.b.max);
+    }
     const T = S.titan;
     if (T) {
       let hp = Math.max(0, T.head.hp), mx = T.head.max;
@@ -684,13 +750,14 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
   function nextWave() {
     S.wave++;
     buildBlocks();
-    if (S.wave === 17 && !S.allClear) { S.blocks = []; spawnCreamTitan(); return; }
+    if (S.wave === 21 && !S.allClear) { S.blocks = []; spawnCreamTitan(); return; }
     // 5ウェーブごとにボス
-    // 4面ごとにボス：チェリー → グレープ → メロン → プリン をくり返す
-    const bossNo = S.wave % 4 === 0 ? (S.wave / 4 - 1) % 4 : -1;
-    if (bossNo === 1) { spawnGrapeKing(); return; }
-    if (bossNo === 2) { spawnMelonLord(); return; }
-    if (bossNo === 3) { spawnPudding(); return; }
+    // 4面ごとにボス：チェリー → レモン → グレープ → メロン → プリン をくり返す
+    const bossNo = S.wave % 4 === 0 ? (S.wave / 4 - 1) % 5 : -1;
+    if (bossNo === 1) { spawnLemonTwins(); return; }
+    if (bossNo === 2) { spawnGrapeKing(); return; }
+    if (bossNo === 3) { spawnMelonLord(); return; }
+    if (bossNo === 4) { spawnPudding(); return; }
     if (bossNo === 0) {
       const b = mkBubble(5, W / 2, -RAD[5], 1, 2);
       b.boss = true; b.bossType = 'cherry'; b.name = 'KING CHERRY'; b.vx *= 0.7; b.hp = b.max = Math.ceil(hpFor(4) * 26); b.next = 0.8;
@@ -774,7 +841,7 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
   }
   function bossDown(b) {
     if (b.bossType) { REC.bosses[b.bossType] = true; saveRec(); }
-    S.boss = null; S.grape = null; S.melon = null; S.cherry = null; S.pudding = null; S.seeds = []; bgm.boss(false);
+    S.boss = null; S.grape = null; S.melon = null; S.cherry = null; S.pudding = null; S.lemon = null; S.seeds = []; bgm.boss(false);
     if (b.bossType === 'titan') {
       S.titan = null; S.drips = []; S.puddles = []; S.allClear = true; S.fw = 240;
       S.freeze = 24; S.slow = 140; S.shake = 36; S.flash = 1; S.flashCol = '255,243,214';
@@ -969,11 +1036,19 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
       if (bl.y < -20 || bl.x < -20 || bl.x > W + 20) bl.dead = true;
     }
     S.bullets = S.bullets.filter(b => !b.dead);
-    if (playing) { updateGrape(); updateMelon(); updatePudding(); updateTitan(); updateSeeds(); updateDrips(); updateCherry(); S.playT++; }
+    if (playing) { updateLemon(); updateGrape(); updateMelon(); updatePudding(); updateTitan(); updateSeeds(); updateDrips(); updateCherry(); S.playT++; }
     updateFireworks();
 
     // 泡
     for (const b of S.bubbles) {
+      if (b.lemonTwin && b.hp <= 0 && !b.dead && S.lemon) {
+        const o = lemonPartner(b);
+        if (o.dead || o.down > 0 || o.hp <= 0) {
+          // 2体そろって撃破。ボス本体（a）を最後に割って、撃破演出を出す
+          if (b === S.lemon.b) { lemonPop(b); b.dead = true; o.down = 0; o.hp = 0; o.ctrl = false; continue; }
+          if (!o.dead) { lemonPop(o); o.dead = true; }
+        } else { lemonDown(b); continue; }
+      }
       if (b.hp <= 0 && !b.dead) { b.dead = true; burst(b); continue; }
       const r = RAD[b.t];
       // ボスは耐久が2割減るたびに怒って子分を吐き出す
@@ -1005,7 +1080,7 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
       b.flash *= 0.75; b.sq *= 0.82; b.wob += 0.08;
       if (b.justCd) b.justCd--;
       if (b.grazeCd) b.grazeCd--;
-      if (playing && !S.inv) {
+      if (playing && !S.inv && !b.down) {
         const cx = Math.max(S.px - 14, Math.min(S.px + 14, b.x)), cy = Math.max(GROUND - 40, Math.min(GROUND, b.y));
         const dist2 = (b.x - cx) ** 2 + (b.y - cy) ** 2;
         if (dist2 < (r - 3) ** 2) hurt();
@@ -1098,7 +1173,7 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
     if (isBest) { best = S.score; try { localStorage.setItem('msb-best', String(best)); } catch (e) {} }
     setPixel($('endTitle'), 'ALL CLEAR!', 4, '#ffe169');
     const roll = $('roll'); roll.replaceChildren();
-    for (const [t, c] of [['MELON SODA BURST', '#ffe169'], ['', ''], ['DIRECTOR', '#9dd8b3'], ['YOU', '#f7efc1'], ['', ''], ['PROGRAM', '#9dd8b3'], ['CLAUDE', '#f7efc1'], ['', ''], ['MUSIC', '#9dd8b3'], ['BGM LAB + YOU', '#f7efc1'], ['', ''], ['BOSSES', '#9dd8b3'], ['KING CHERRY', '#f24d6b'], ['GRAPE KING', '#b98cff'], ['MELON LORD', '#8fd46a'], ['PUDDING GENERAL', '#ffd96b'], ['CREAM TITAN', '#fff3d6'], ['', ''], ['THANK YOU FOR PLAYING!', '#ffe169']]) {
+    for (const [t, c] of [['MELON SODA BURST', '#ffe169'], ['', ''], ['DIRECTOR', '#9dd8b3'], ['YOU', '#f7efc1'], ['', ''], ['PROGRAM', '#9dd8b3'], ['CLAUDE', '#f7efc1'], ['', ''], ['MUSIC', '#9dd8b3'], ['BGM LAB + YOU', '#f7efc1'], ['', ''], ['BOSSES', '#9dd8b3'], ['KING CHERRY', '#f24d6b'], ['LEMON TWINS', '#ffe86a'], ['GRAPE KING', '#b98cff'], ['MELON LORD', '#8fd46a'], ['PUDDING GENERAL', '#ffd96b'], ['CREAM TITAN', '#fff3d6'], ['', ''], ['THANK YOU FOR PLAYING!', '#ffe169']]) {
       const el = document.createElement('div'); if (t) setPixel(el, t, 2, c); else el.style.height = '8px'; roll.appendChild(el);
     }
     roll.style.animation = 'none'; void roll.offsetHeight; roll.style.animation = '';
@@ -1188,8 +1263,8 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
     initAudio(); bgm.start();
     const fmtT = v => v ? Math.floor(v / 60) + ':' + String(v % 60).padStart(2, '0') : '--:--';
     const box = $('recStats'); box.replaceChildren();
-    const nB = ['cherry', 'grape', 'melon', 'pudding', 'titan'].filter(k => REC.bosses[k]).length;
-    for (const [k, v] of [['HI SCORE', best.toLocaleString()], ['BEST WAVE', REC.bestWave || '-'], ['MAX COMBO', REC.maxCombo || '-'], ['BOSSES', nB + ' / 5'],
+    const nB = ['cherry', 'lemon', 'grape', 'melon', 'pudding', 'titan'].filter(k => REC.bosses[k]).length;
+    for (const [k, v] of [['HI SCORE', best.toLocaleString()], ['BEST WAVE', REC.bestWave || '-'], ['MAX COMBO', REC.maxCombo || '-'], ['BOSSES', nB + ' / 6'],
       ['ALL CLEARS', REC.clears], ['BEST CLEAR TIME', fmtT(REC.bestTime)], ['BEST CLEAR RANK', REC.bestClearRank || '-']]) {
       const a = document.createElement('div'), b = document.createElement('div');
       setPixel(a, k, 2, '#f7efc1'); setPixel(b, v, 2, '#ffe169'); box.append(a, b);
@@ -1749,7 +1824,23 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
       pxRect(g,-66+(flip?0:14),sy,14,6,'#ffe169');pxRect(g,52-(flip?0:14),sy,14,6,'#ffe169');
       pxRect(g,-62+(flip?0:14),sy+6,4,6,'#ffe169');pxRect(g,58-(flip?0:14),sy+6,4,6,'#ffe169');
     }));
-    return {bubble,boss,player,flash,fizz,grape,grapeCore,melon,cream,titan,pudding};
+    // 輪切りのレモン：0=通常 1=DOWN（目がバツ）
+    const lemon=[0,1].map(down=>makeSprite(124,124,g=>{
+      g.translate(62,62);const r=RAD[4];
+      pxBall(g,r,'#f5d020','#ffe86a','#d4a800');
+      pxBall(g,r-8,'#fff7b0','#ffffff','#f0e08a');
+      for(let k=0;k<8;k++){const a=k*Math.PI/4;for(let d=10;d<r-12;d+=4)pxRect(g,Math.round(Math.cos(a)*d/2)*2-2,Math.round(Math.sin(a)*d/2)*2-2,4,4,'#f2d65a');}
+      if(down){
+        for(const ex of[-18,10]){pxRect(g,ex,-12,4,4,'#160818');pxRect(g,ex+8,-12,4,4,'#160818');pxRect(g,ex+4,-8,4,4,'#160818');pxRect(g,ex,-4,4,4,'#160818');pxRect(g,ex+8,-4,4,4,'#160818');}
+        for(let i=0;i<5;i++)pxRect(g,-12+i*6,14+(i%2)*4,6,4,'#160818');
+      }else{
+        pxRect(g,-18,-12,10,12,'#160818');pxRect(g,10,-12,10,12,'#160818');pxRect(g,-16,-10,4,4,'#ffffff');pxRect(g,12,-10,4,4,'#ffffff');
+        pxRect(g,-22,-20,14,4,'#a07800');pxRect(g,10,-24,14,4,'#a07800');
+        pxRect(g,-10,12,20,4,'#160818');pxRect(g,-14,8,4,4,'#160818');pxRect(g,10,8,4,4,'#160818');
+      }
+      pxRect(g,-r*.45,-r*.6,8,4,'#ffffff');
+    }));
+    return {bubble,boss,player,flash,fizz,grape,grapeCore,melon,cream,titan,pudding,lemon};
   })();
   // ロゴ：枠なし。後ろで炭酸の泡が立ち上る
   const logoFizz = Array.from({ length: 22 }, () => ({ x: Math.random() * 320, y: Math.random() * 120, v: 0.3 + Math.random() * 0.6, s: 2 + (Math.random() * 2 | 0) * 2 }));
@@ -1781,7 +1872,8 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
       g.globalCompositeOperation = 'source-over'; pixText(g, '?', src.width / 2, src.height / 2 - 21, 6, '#8fd4a0', 'center');
     });
     // [キー, 絵, 横位置, 縮尺, 揺れ方]
-    const L = [['cherry', cherry, 34, 0.34, 'hop'], ['grape', grape, 92, 0.3, 'sway'], ['titan', titan, 160, 0.36, 'bob'], ['melon', melon, 228, 0.34, 'sway'], ['pudding', spriteBank.pudding[0], 288, 0.36, 'jiggle']];
+    const twins = mk(200, 124, g => { g.drawImage(spriteBank.lemon[0], 0, 0); g.save(); g.translate(200, 0); g.scale(-1, 1); g.drawImage(spriteBank.lemon[0], 0, 0); g.restore(); });
+    const L = [['cherry', cherry, 28, 0.3, 'hop'], ['lemon', twins, 84, 0.3, 'hop'], ['grape', grape, 136, 0.26, 'sway'], ['titan', titan, 188, 0.34, 'bob'], ['melon', melon, 244, 0.3, 'sway'], ['pudding', spriteBank.pudding[0], 296, 0.32, 'jiggle']];
     return L.map(([key, img, x, sc, mv]) => ({ key, img, sil: shadow(img), x, sc, mv }));
   })();
   function paintLineup(id, t) {
@@ -1824,6 +1916,15 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
     const g=ctx,r=RAD[b.t];
     g.save();g.translate(snap(b.x),snap(b.y));
     g.scale(1+.18*b.sq,1-.18*b.sq);
+    if(b.lemonTwin){
+      const sp=spriteBank.lemon[b.down>0?1:0];
+      if(b.flipX)g.scale(-1,1);
+      g.drawImage(sp,-62,-62);
+      if(b.flash>.05){g.globalAlpha=b.flash*.5;const f=spriteBank.flash[4];g.drawImage(f,-f.width/2,-f.height/2);g.globalAlpha=1}
+      if(b.flipX)g.scale(-1,1);
+      if(b.down>0){g.textAlign='center';g.textBaseline='middle';g.font='28px monospace';g.fillStyle=frameNo%20<10?'#f24d6b':'#ffe86a';g.fillText(String(Math.ceil(b.down/60)),0,-r-24);}
+      g.restore();return;
+    }
     if(b.bossType==='pudding'){
       const P=S.pudding,sp=spriteBank.pudding[P&&P.phase===2?1:0];
       g.drawImage(sp,-85,-78);
@@ -2009,10 +2110,16 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
     }
     for (const b of S.bubbles) drawBubble(b);
     if (S.power.beam && mode === 'play') {
-      const top = Math.round(S.beamTop), len = GROUND - 44 - top, x = snap(S.px), wob = S.power.beam % 4 < 2 ? 2 : 0;
-      ctx.globalAlpha = 0.55; pxRect(ctx, x - 10 - wob, top, 20 + wob * 2, len, '#ff8c42');
-      ctx.globalAlpha = 1; pxRect(ctx, x - 6, top, 12, len, '#ffe169'); pxRect(ctx, x - 2, top, 4, len, '#ffffff');
-      pxRect(ctx, x - 12, top - 4, 24, 8, '#fff6df');
+      // 傾いたビームを横長の帯の積み重ねで描く（太さは弾数で増える）
+      const G = beamGeom(), len = S.beamLen, wob = S.power.beam % 4 < 2 ? 2 : 0, k = 1 / Math.max(0.5, Math.cos(G.ang));
+      const wO = Math.round((G.half * 2 + 6 + wob * 2) * k / 2) * 2, wM = Math.round(G.half * 2 * k / 2) * 2, wC = Math.max(4, Math.round(G.half * 0.6 * k / 2) * 2);
+      for (let d = 0; d < len; d += 4) {
+        const x = snap(G.ox + G.dx * d), y = Math.round((G.oy + G.dy * d) / 2) * 2;
+        ctx.globalAlpha = 0.5; pxRect(ctx, x - wO / 2, y, wO, 4, '#ff8c42');
+        ctx.globalAlpha = 1; pxRect(ctx, x - wM / 2, y, wM, 4, '#ffe169'); pxRect(ctx, x - wC / 2, y, wC, 4, '#ffffff');
+      }
+      const tx = snap(G.ox + G.dx * len), ty = snap(G.oy + G.dy * len);
+      pxRect(ctx, tx - wM / 2 - 4, ty - 4, wM + 8, 8, '#fff6df');
     }
     for (const sd of S.seeds || []) {
       const x = snap(sd.x), y = snap(sd.y);
