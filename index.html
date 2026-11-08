@@ -265,7 +265,7 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
   ];
   function buildBlocks() {
     S.blocks = [];
-    if (S.wave < 2 || S.wave % 4 === 0 || (S.wave === 21 && !S.allClear)) return;
+    if (S.wave < 2 || S.wave % 4 === 0 || (S.wave === 25 && !S.allClear)) return;
     const L = S.wave <= 4 ? LAYOUTS[S.wave - 2] : LAYOUTS[Math.random() * LAYOUTS.length | 0];
     for (const [type, fx, fy, w] of L) {
       const y = snap(Math.max(130, Math.min(GROUND - 170, H * fy))), x = snap(W * fx - w / 2);
@@ -345,7 +345,7 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
       const t = Math.max(0, Math.min(len, (b.x - ox) * dx + (b.y - oy) * dy));
       const px = ox + dx * t, py = oy + dy * t;
       if ((b.x - px) ** 2 + (b.y - py) ** 2 >= (r + half) ** 2) continue;
-      let m = 1;
+      let m = colaMult(b);
       if (b.bossType === 'pudding' && puddingGuard()) { if (Math.abs(ang) < ANGLE_MIN) continue; m = 1.5; }
       b.hp -= dpf * m; b.flash = Math.max(b.flash, 0.6);
       if (Math.random() < 0.3) S.parts.push({ k: 'spark', x: px + (Math.random() - .5) * half, y: py, vx: (Math.random() - .5) * 3, vy: -Math.random() * 2, r: 5, t: 0, life: 10 });
@@ -728,6 +728,116 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
       }
     }
   }
+  // ---- COLA GEYSER：内圧ゲージが満タンになると、床から天井までのコーラの柱を噴き上げる ----
+  // 床から浮かぶ泡は本体に届くと内圧が上がる。噴いた直後は中身が空っぽで、ダメージ1.5倍
+  const COLA_W = 60;
+  function spawnCola() {
+    const b = mkBubble(5, W / 2, -160, 1, 0);
+    b.boss = true; b.bossType = 'cola'; b.name = 'COLA GEYSER'; b.attached = true;
+    b.hp = b.max = Math.ceil(hpFor(4) * 105);
+    S.cola = { body: b, t: 0, enter: 80, press: 0, state: 'fill', st: 0, cols: [], fizzCd: 150, rage: false, hinted: false, emptyHint: false };
+    S.bubbles.push(b); S.boss = b; S.queue = []; S.qT = 0; S.seeds = [];
+    S.banner = { text: 'BOSS!!', sub: 'COLA GEYSER APPEARS', t: 0, dur: 110, col: '#ff6a4d' };
+    sfx.bossIn(); bgm.boss(true); buzz([100, 60, 100]);
+  }
+  // 噴いた直後の空っぽ状態だけ1.5倍
+  const colaMult = b => b.bossType === 'cola' && S.cola && S.cola.state === 'empty' ? 1.5 : 1;
+  function colaFizz() {
+    let x = 0;
+    for (let k = 0; k < 12; k++) { x = 30 + Math.random() * (W - 60); if (Math.abs(x - S.px) > 90) break; }
+    const f = mkBubble(0, x, GROUND - 12, 1, 0);
+    f.kind = 'colafizz'; f.ctrl = true; f.col = '#c0642a'; f.hp = f.max = Math.max(1, Math.ceil(f.hp * 0.6));
+    S.bubbles.push(f);
+    for (let i = 0; i < 6; i++) S.parts.push({ k: 'drop', x, y: GROUND - 4, vx: (Math.random() - .5) * 3, vy: -1 - Math.random() * 2, r: 2, col: i % 2 ? '#c0642a' : '#fff3d6', t: 0, life: 18 });
+  }
+  function updateCola() {
+    const C = S.cola;
+    if (!C) return;
+    const b = C.body;
+    if (b.dead) {
+      // 残った泡はふつうの泡として落ちてくる
+      for (const f of S.bubbles) if (f.kind === 'colafizz') { f.ctrl = false; f.vx = (Math.random() < 0.5 ? -1 : 1) * 1.2; f.vy = 0; }
+      S.cola = null; return;
+    }
+    if (!C.rage && b.hp / b.max < 0.5) {
+      C.rage = true;
+      S.banner = { text: 'OVERFIZZ!', sub: 'DOUBLE GEYSER', t: 0, dur: 90, col: '#ff6a4d' };
+      S.shake = Math.max(S.shake, 18); S.flash = 0.4; S.flashCol = '255,106,77'; sfx.bossIn(); buzz([60, 40, 120]);
+    }
+    const frozen = S.freezeT > 0;
+    if (!frozen) {
+      C.t++;
+      if (C.enter > 0) C.enter--;
+      else {
+        if (C.state === 'fill') {
+          C.press += C.rage ? 0.55 : 0.42;
+          if (C.press >= 100) {
+            C.press = 100; C.state = 'aim'; C.st = 50;
+            C.cols = [{ x: S.px, g: false }];
+            if (C.rage) {
+              let x = 0;
+              for (let k = 0; k < 12; k++) { x = 40 + Math.random() * (W - 80); if (Math.abs(x - S.px) > 120) break; }
+              C.cols.push({ x, g: false });
+            }
+            if (!C.hinted) { C.hinted = true; S.banner = { text: 'PRESSURE MAX!', sub: 'GET OUT OF THE LINE', t: 0, dur: 90, col: '#ff6a4d' }; }
+            sfx.charge();
+          }
+        } else if (C.state === 'aim') {
+          // 予告ラインはゆっくり自機を追い、途中で止まる
+          C.cols[0].x += (S.px - C.cols[0].x) * 0.08;
+          if (--C.st <= 0) { C.state = 'lock'; C.st = 28; sfx.charge(); }
+        } else if (C.state === 'lock') {
+          if (--C.st <= 0) {
+            C.state = 'erupt'; C.st = 72; C.n = (C.n || 0) + 1;
+            S.shake = Math.max(S.shake, 22); S.flash = 0.3; S.flashCol = '192,100,42'; sfx.boom(); buzz([40, 30, 90]);
+            for (const c of C.cols) for (let i = 0; i < 20; i++) S.parts.push({ k: 'drop', x: c.x + (Math.random() - .5) * COLA_W, y: GROUND - 4, vx: (Math.random() - .5) * 7, vy: -2 - Math.random() * 5, r: 3 + Math.random() * 3, col: i % 3 ? '#8a3a18' : '#fff3d6', t: 0, life: 36 });
+          }
+        } else if (C.state === 'erupt') {
+          for (const c of C.cols) {
+            const d = Math.abs(S.px - c.x);
+            if (C.st > 6 && !S.inv && d < COLA_W / 2 + 8) { hurt(); break; }
+            if (!c.g && !S.inv && d < COLA_W / 2 + 30) {
+              c.g = true; S.grazes++; chargeBurst(10);
+              S.texts.push({ x: S.px, y: GROUND - 84, text: 'GRAZE! +10', t: 0, col: '#ffd93b', size: 17 });
+              sfx.graze();
+            }
+            // 怒ると柱のてっぺんからコーラのしぶきが降ってくる
+            if (C.rage && C.st % 14 === 0 && S.seeds.length < 14) S.seeds.push({ x: c.x + (Math.random() < 0.5 ? -1 : 1) * (40 + Math.random() * 80), y: 110, vx: 0, vy: 3.2, g: 0, col: '#c0642a' });
+            if (C.st % 3 === 0) S.parts.push({ k: 'drop', x: c.x + (Math.random() - .5) * COLA_W, y: 100 + Math.random() * 40, vx: (Math.random() - .5) * 6, vy: Math.random() * 2, r: 3, col: '#fff3d6', t: 0, life: 30 });
+          }
+          if (--C.st <= 0) {
+            C.state = 'empty'; C.st = 150; C.press = 0; C.cols = [];
+            S.texts.push({ x: b.x, y: b.y - 90, text: 'EMPTY!', t: 0, col: '#ffe169', size: 22 });
+            if (!C.emptyHint) { C.emptyHint = true; S.banner = { text: 'EMPTY!', sub: 'HIT IT NOW! DAMAGE X1.5', t: 0, dur: 90, col: '#ffe169' }; }
+          }
+        } else if (C.state === 'empty') {
+          if (--C.st <= 0) C.state = 'fill';
+        }
+        // 床から浮かぶ泡（噴いている間は止まる）
+        if (C.state !== 'erupt' && --C.fizzCd <= 0) {
+          colaFizz(); if (C.rage) colaFizz();
+          C.fizzCd = C.rage ? 80 : 105;
+        }
+      }
+      for (const f of S.bubbles) {
+        if (f.kind !== 'colafizz' || f.dead || f.hp <= 0) continue;
+        f.y -= C.rage ? 1.5 : 1.25; f.x += Math.sin(f.wob * 1.5) * 0.7;
+        if (Math.hypot(f.x - b.x, f.y - b.y) < RAD[5] + RAD[0]) {
+          f.dead = true;
+          if (C.state === 'fill') C.press = Math.min(100, C.press + 12);
+          else if (C.state === 'empty') C.st = Math.max(0, C.st - 30);
+          S.texts.push({ x: b.x, y: b.y + 80, text: 'GULP!', t: 0, col: '#ff6a4d', size: 14 });
+          S.parts.push({ k: 'ring', x: f.x, y: f.y, r: 6, grow: 2, col: '#c0642a', t: 0, life: 12 });
+        }
+        if (f.y < -20) f.dead = true;
+      }
+    }
+    const busy = C.state === 'aim' || C.state === 'lock';
+    b.x = W / 2 + Math.sin(C.t * 0.014) * (W / 2 - 90) + (busy && frameNo % 4 < 2 ? 2 : 0);
+    b.y = 228 + Math.sin(C.t * 0.04) * 6 - C.enter * 5;
+    b.vx = 0; b.vy = 0;
+    b.sq = C.state === 'empty' ? -0.3 : busy ? Math.sin(C.t * 0.9) * 0.25 : Math.sin(C.t * 0.12) * 0.1 * (0.5 + C.press / 100);
+  }
   function bossFrac() {
     const LM = S.lemon;
     if (LM) {
@@ -750,14 +860,14 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
   function nextWave() {
     S.wave++;
     buildBlocks();
-    if (S.wave === 21 && !S.allClear) { S.blocks = []; spawnCreamTitan(); return; }
-    // 5ウェーブごとにボス
-    // 4面ごとにボス：チェリー → レモン → グレープ → メロン → プリン をくり返す
-    const bossNo = S.wave % 4 === 0 ? (S.wave / 4 - 1) % 5 : -1;
+    if (S.wave === 25 && !S.allClear) { S.blocks = []; spawnCreamTitan(); return; }
+    // 4面ごとにボス：チェリー → レモン → グレープ → メロン → コーラ → プリン をくり返す（25面が最終ボス）
+    const bossNo = S.wave % 4 === 0 ? (S.wave / 4 - 1) % 6 : -1;
     if (bossNo === 1) { spawnLemonTwins(); return; }
     if (bossNo === 2) { spawnGrapeKing(); return; }
     if (bossNo === 3) { spawnMelonLord(); return; }
-    if (bossNo === 4) { spawnPudding(); return; }
+    if (bossNo === 4) { spawnCola(); return; }
+    if (bossNo === 5) { spawnPudding(); return; }
     if (bossNo === 0) {
       const b = mkBubble(5, W / 2, -RAD[5], 1, 2);
       b.boss = true; b.bossType = 'cherry'; b.name = 'KING CHERRY'; b.vx *= 0.7; b.hp = b.max = Math.ceil(hpFor(4) * 26); b.next = 0.8;
@@ -842,6 +952,7 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
   function bossDown(b) {
     if (b.bossType) { REC.bosses[b.bossType] = true; saveRec(); }
     S.boss = null; S.grape = null; S.melon = null; S.cherry = null; S.pudding = null; S.lemon = null; S.seeds = []; bgm.boss(false);
+    if (S.cola) { S.cola.body.dead = true; updateCola(); }
     if (b.bossType === 'titan') {
       S.titan = null; S.drips = []; S.puddles = []; S.allClear = true; S.fw = 240;
       S.freeze = 24; S.slow = 140; S.shake = 36; S.flash = 1; S.flashCol = '255,243,214';
@@ -1013,7 +1124,7 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
         const u = Math.max(0, Math.min(1, ((b.x - x0) * dx + (b.y - y0) * dy) / (dx * dx + dy * dy || 1)));
         const hx = x0 + u * dx, hy = y0 + u * dy;
         if ((hx - b.x) ** 2 + (hy - b.y) ** 2 <= r * r) {
-          let pm = 1;
+          let pm = colaMult(b);
           if (b.bossType === 'pudding') { pm = puddingHit(b, bl, hx, hy); if (pm === 0) { bl.dead = true; break; } }
           const just = playing && Math.abs(hx - b.x) < RAD[b.t] * 0.28 && !b.justCd;
           const damage = S.up.dmg * (bl.fever ? 1.5 : 1) * (just ? 1.4 : 1) * pm;
@@ -1036,7 +1147,7 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
       if (bl.y < -20 || bl.x < -20 || bl.x > W + 20) bl.dead = true;
     }
     S.bullets = S.bullets.filter(b => !b.dead);
-    if (playing) { updateLemon(); updateGrape(); updateMelon(); updatePudding(); updateTitan(); updateSeeds(); updateDrips(); updateCherry(); S.playT++; }
+    if (playing) { updateLemon(); updateGrape(); updateMelon(); updatePudding(); updateCola(); updateTitan(); updateSeeds(); updateDrips(); updateCherry(); S.playT++; }
     updateFireworks();
 
     // 泡
@@ -1173,7 +1284,7 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
     if (isBest) { best = S.score; try { localStorage.setItem('msb-best', String(best)); } catch (e) {} }
     setPixel($('endTitle'), 'ALL CLEAR!', 4, '#ffe169');
     const roll = $('roll'); roll.replaceChildren();
-    for (const [t, c] of [['MELON SODA BURST', '#ffe169'], ['', ''], ['DIRECTOR', '#9dd8b3'], ['YOU', '#f7efc1'], ['', ''], ['PROGRAM', '#9dd8b3'], ['CLAUDE', '#f7efc1'], ['', ''], ['MUSIC', '#9dd8b3'], ['BGM LAB + YOU', '#f7efc1'], ['', ''], ['BOSSES', '#9dd8b3'], ['KING CHERRY', '#f24d6b'], ['LEMON TWINS', '#ffe86a'], ['GRAPE KING', '#b98cff'], ['MELON LORD', '#8fd46a'], ['PUDDING GENERAL', '#ffd96b'], ['CREAM TITAN', '#fff3d6'], ['', ''], ['THANK YOU FOR PLAYING!', '#ffe169']]) {
+    for (const [t, c] of [['MELON SODA BURST', '#ffe169'], ['', ''], ['DIRECTOR', '#9dd8b3'], ['YOU', '#f7efc1'], ['', ''], ['PROGRAM', '#9dd8b3'], ['CLAUDE', '#f7efc1'], ['', ''], ['MUSIC', '#9dd8b3'], ['BGM LAB + YOU', '#f7efc1'], ['', ''], ['BOSSES', '#9dd8b3'], ['KING CHERRY', '#f24d6b'], ['LEMON TWINS', '#ffe86a'], ['GRAPE KING', '#b98cff'], ['MELON LORD', '#8fd46a'], ['COLA GEYSER', '#ff6a4d'], ['PUDDING GENERAL', '#ffd96b'], ['CREAM TITAN', '#fff3d6'], ['', ''], ['THANK YOU FOR PLAYING!', '#ffe169']]) {
       const el = document.createElement('div'); if (t) setPixel(el, t, 2, c); else el.style.height = '8px'; roll.appendChild(el);
     }
     roll.style.animation = 'none'; void roll.offsetHeight; roll.style.animation = '';
@@ -1263,8 +1374,8 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
     initAudio(); bgm.start();
     const fmtT = v => v ? Math.floor(v / 60) + ':' + String(v % 60).padStart(2, '0') : '--:--';
     const box = $('recStats'); box.replaceChildren();
-    const nB = ['cherry', 'lemon', 'grape', 'melon', 'pudding', 'titan'].filter(k => REC.bosses[k]).length;
-    for (const [k, v] of [['HI SCORE', best.toLocaleString()], ['BEST WAVE', REC.bestWave || '-'], ['MAX COMBO', REC.maxCombo || '-'], ['BOSSES', nB + ' / 6'],
+    const nB = ['cherry', 'lemon', 'grape', 'melon', 'cola', 'pudding', 'titan'].filter(k => REC.bosses[k]).length;
+    for (const [k, v] of [['HI SCORE', best.toLocaleString()], ['BEST WAVE', REC.bestWave || '-'], ['MAX COMBO', REC.maxCombo || '-'], ['BOSSES', nB + ' / 7'],
       ['ALL CLEARS', REC.clears], ['BEST CLEAR TIME', fmtT(REC.bestTime)], ['BEST CLEAR RANK', REC.bestClearRank || '-']]) {
       const a = document.createElement('div'), b = document.createElement('div');
       setPixel(a, k, 2, '#f7efc1'); setPixel(b, v, 2, '#ffe169'); box.append(a, b);
@@ -1840,7 +1951,32 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
       }
       pxRect(g,-r*.45,-r*.6,8,4,'#ffffff');
     }));
-    return {bubble,boss,player,flash,fizz,grape,grapeCore,melon,cream,titan,pudding,lemon};
+    // COLA GEYSER：0=通常 1=内圧MAX（怒り） 2=空っぽ（王冠が飛んで目を回す）
+    const cola=[0,1,2].map(mood=>makeSprite(160,170,g=>{
+      g.translate(80,90);const r=RAD[5];
+      pxBall(g,r,mood===1?'#6a2410':'#5a2410',mood===1?'#b0502a':'#9a4a20','#2e1006');
+      // 中の炭酸のつぶ
+      for(const[x,y,s]of[[-44,-30,4],[-30,-48,4],[36,-36,4],[48,-12,4],[-50,4,4],[28,-54,4],[-10,-58,4],[40,6,4],[-38,46,4],[30,48,4],[-6,56,4],[52,30,4]])pxRect(g,x,y,s,s,'#d98a4a');
+      // 赤いラベル帯と白い波線
+      for(let y=16;y<40;y+=4){const half=Math.round(Math.sqrt(Math.max(0,(r-4)**2-(y+2)**2))/4)*4;pxRect(g,-half,y,half*2,4,'#e8503a');}
+      for(let x=-60;x<60;x+=4)pxRect(g,x,24+Math.round(Math.sin(x*0.09)*3/2)*2,4,4,'#fff3d6');
+      // 王冠のフタ（空っぽのときは泡があふれる）
+      if(mood===2){for(let i=0;i<7;i++)pxRect(g,-28+i*8,-r-6-(i%2)*6,10,10,i%2?'#fff3d6':'#ffffff');}
+      else{pxRect(g,-22,-r-8,44,12,'#e8503a');for(let i=0;i<6;i++)pxRect(g,-22+i*8,-r-12,4,4,'#e8503a');pxRect(g,-18,-r-6,12,4,'#ff9a7a');}
+      // 顔
+      if(mood===2){
+        for(const ex of[-28,10]){pxRect(g,ex,-26,4,4,'#fff3d6');pxRect(g,ex+12,-26,4,4,'#fff3d6');pxRect(g,ex+4,-30,8,4,'#fff3d6');pxRect(g,ex+4,-18,8,4,'#fff3d6');pxRect(g,ex+6,-24,4,4,'#fff3d6');}
+        pxRect(g,-8,0,16,10,'#1a0804');
+      }else{
+        const eye=mood===1?'#f24d6b':'#160818';
+        pxRect(g,-30,-30,20,16,'#fff9e0');pxRect(g,10,-30,20,16,'#fff9e0');pxRect(g,-24,-24,8,8,eye);pxRect(g,16,-24,8,8,eye);
+        if(mood===1){pxRect(g,-34,-40,22,6,'#1a0804');pxRect(g,12,-40,22,6,'#1a0804');pxRect(g,-18,-2,36,12,'#1a0804');for(let i=0;i<4;i++)pxRect(g,-16+i*9,-2,4,4,'#fff5d6');}
+        else{pxRect(g,-34,-38,22,4,'#1a0804');pxRect(g,12,-38,22,4,'#1a0804');pxRect(g,-12,2,24,4,'#1a0804');pxRect(g,-16,-2,4,4,'#1a0804');pxRect(g,12,-2,4,4,'#1a0804');}
+      }
+      pxRect(g,-r*.5,-r*.55,12,4,'#c8784a');pxRect(g,-r*.58,-r*.42,4,8,'#c8784a');
+    }));
+    const colaFizz=makeSprite(36,36,g=>{g.translate(18,18);pxBall(g,RAD[0],'#c0642a','#f0b080','#6a2410');pxRect(g,-4,-6,4,4,'#ffffff');});
+    return {bubble,boss,player,flash,fizz,grape,grapeCore,melon,cream,titan,pudding,lemon,cola,colaFizz};
   })();
   // ロゴ：枠なし。後ろで炭酸の泡が立ち上る
   const logoFizz = Array.from({ length: 22 }, () => ({ x: Math.random() * 320, y: Math.random() * 120, v: 0.3 + Math.random() * 0.6, s: 2 + (Math.random() * 2 | 0) * 2 }));
@@ -1873,7 +2009,7 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
     });
     // [キー, 絵, 横位置, 縮尺, 揺れ方]
     const twins = mk(200, 124, g => { g.drawImage(spriteBank.lemon[0], 0, 0); g.save(); g.translate(200, 0); g.scale(-1, 1); g.drawImage(spriteBank.lemon[0], 0, 0); g.restore(); });
-    const L = [['cherry', cherry, 28, 0.3, 'hop'], ['lemon', twins, 84, 0.3, 'hop'], ['grape', grape, 136, 0.26, 'sway'], ['titan', titan, 188, 0.34, 'bob'], ['melon', melon, 244, 0.3, 'sway'], ['pudding', spriteBank.pudding[0], 296, 0.32, 'jiggle']];
+    const L = [['cherry', cherry, 24, 0.26, 'hop'], ['lemon', twins, 70, 0.26, 'hop'], ['grape', grape, 116, 0.23, 'sway'], ['titan', titan, 160, 0.32, 'bob'], ['melon', melon, 205, 0.26, 'sway'], ['cola', spriteBank.cola[0], 251, 0.26, 'shake'], ['pudding', spriteBank.pudding[0], 298, 0.28, 'jiggle']];
     return L.map(([key, img, x, sc, mv]) => ({ key, img, sil: shadow(img), x, sc, mv }));
   })();
   function paintLineup(id, t) {
@@ -1887,6 +2023,7 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
       if (b.mv === 'hop') dy = -Math.round(Math.abs(Math.sin(t / 380 + i)) * 10);
       else if (b.mv === 'sway') dx = Math.round(Math.sin(t / 700 + i) * 3);
       else if (b.mv === 'jiggle') dx = Math.round(Math.sin(t / 120) * 2);
+      else if (b.mv === 'shake') { dx = (t / 90 | 0) % 12 < 2 ? Math.round(Math.sin(t / 25) * 2) : 0; dy = -Math.round(Math.max(0, Math.sin(t / 500)) * 4); }
       else dy = Math.round(Math.sin(t / 900) * 2);
       g.drawImage(img, Math.round(b.x - w / 2 + dx), 150 - h + dy, w, h);
     });
@@ -1947,6 +2084,17 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
           if(P.open>0&&frameNo%8<4)pxRect(g,-60,24,120,4,'#ffffff');
         }
       }
+      g.restore();return;
+    }
+    if(b.bossType==='cola'){
+      const C=S.cola,mood=C&&C.state==='empty'?2:C&&(C.state==='aim'||C.state==='lock'||C.state==='erupt'||C.rage)?1:0;
+      g.drawImage(spriteBank.cola[mood],-80,-90);
+      if(b.flash>.05){const f=spriteBank.flash[5];g.globalAlpha=b.flash*.5;g.drawImage(f,-f.width/2,-f.height/2);g.globalAlpha=1}
+      g.restore();return;
+    }
+    if(b.kind==='colafizz'){
+      const s=spriteBank.colaFizz;g.drawImage(s,-s.width/2,-s.height/2);
+      if(b.flash>.05){const f=spriteBank.flash[0];g.globalAlpha=b.flash*.7;g.drawImage(f,-f.width/2,-f.height/2);g.globalAlpha=1}
       g.restore();return;
     }
     if(b.bossType==='titan'){
@@ -2093,6 +2241,36 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
         for (let k = 0; k < 8; k++) { const w = 64 - k * 7; pxRect(ctx, x - w / 2, y + k * 6, w, 6, k % 2 ? '#b07a36' : '#d9a35b'); }
       }
     }
+    if (S.cola) {
+      const C = S.cola;
+      for (const c of C.cols) {
+        const x0 = snap(c.x - COLA_W / 2);
+        if (C.state === 'aim' || C.state === 'lock') {
+          // 予告ライン：追ってくる間は赤、止まると黄色
+          const locked = C.state === 'lock', col = locked ? '#ffe169' : '#ff6a4d';
+          if (locked || frameNo % 8 < 5) {
+            for (let y = 104 + (frameNo * 2) % 16; y < GROUND; y += 16) { pxRect(ctx, x0, y, 4, 8, col); pxRect(ctx, x0 + COLA_W - 4, y, 4, 8, col); }
+            pxRect(ctx, x0, GROUND - 8, COLA_W, 8, col);
+            if (locked) { ctx.globalAlpha = 0.18; pxRect(ctx, x0, 100, COLA_W, GROUND - 100, col); ctx.globalAlpha = 1; }
+          }
+        } else if (C.state === 'erupt') {
+          // コーラの柱：最初の数フレームで床から伸び、最後に細くなって消える
+          const age = 72 - C.st, top = Math.max(0, GROUND - age * 90), shrink = C.st < 10 ? (10 - C.st) * 3 : 0;
+          const xa = x0 + shrink, w = COLA_W - shrink * 2;
+          if (w > 0) {
+            pxRect(ctx, xa, top, w, GROUND - top, '#3a1408');
+            pxRect(ctx, xa + 6, top, Math.max(0, w - 12), GROUND - top, '#6a2a10');
+            pxRect(ctx, xa + 12, top, 6, GROUND - top, '#a0522a');
+            for (let y = top; y < GROUND; y += 24) {
+              const wv = ((y / 24 + frameNo / 3) | 0) % 2 ? 4 : 0;
+              pxRect(ctx, xa - 4 - wv, y, 6, 12, '#fff3d6'); pxRect(ctx, xa + w - 2 + wv, y + 12, 6, 12, '#fff3d6');
+            }
+            for (let k = 0; k < 8; k++) { const by = GROUND - ((frameNo * 9 + k * 83) % Math.max(1, GROUND - top)); pxRect(ctx, xa + 8 + (k * 17) % Math.max(4, w - 16), snap(by), 4, 4, '#f0d0a8'); }
+            pxRect(ctx, xa - 8, GROUND - 10, w + 16, 10, '#fff3d6');
+          }
+        }
+      }
+    }
     for (const d of S.drips || []) { pxRect(ctx, snap(d.x) - 4, snap(d.y) - 6, 8, 10, '#fff3d6'); pxRect(ctx, snap(d.x) - 2, snap(d.y) + 4, 4, 4, '#efd9a8'); }
     if (S.cherry && S.cherry.state !== 'bounce' && frameNo % 8 < 5) {
       // 落下地点の予告（真上で止まると色が変わって場所が確定する）
@@ -2109,6 +2287,13 @@ body{background:#08110a;color:var(--cream);padding-left:env(safe-area-inset-left
       }
     }
     for (const b of S.bubbles) drawBubble(b);
+    if (S.cola && !S.cola.body.dead) {
+      // 内圧ゲージ：本体の下。満タン近くで点滅、空っぽの間は黄色で残り時間
+      const C = S.cola, b = C.body, x = snap(b.x) - 50, y = snap(b.y) + RAD[5] + 12;
+      const f = C.state === 'empty' ? C.st / 150 : C.state === 'fill' ? C.press / 100 : 1;
+      const col = C.state === 'empty' ? '#ffe169' : f > 0.8 && frameNo % 10 < 5 ? '#ffffff' : '#ff6a4d';
+      pxRect(ctx, x, y, 100, 10, '#07120a'); pxRect(ctx, x + 2, y + 2, Math.round(96 * f / 2) * 2, 6, col);
+    }
     if (S.power.beam && mode === 'play') {
       // 傾いたビームを横長の帯の積み重ねで描く（太さは弾数で増える）
       const G = beamGeom(), len = S.beamLen, wob = S.power.beam % 4 < 2 ? 2 : 0, k = 1 / Math.max(0.5, Math.cos(G.ang));
