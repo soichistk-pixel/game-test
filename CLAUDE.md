@@ -8,7 +8,7 @@
 - **GitHub Pages版（友だち用）**: https://soichistk-pixel.github.io/game-test/  … リポジトリ `soichistk-pixel/game-test` の `index.html`
 - `index.html` は Artifact のソースに HTML の外枠（doctype / charset / viewport / `[hidden]{display:none!important}`）を足しただけ。Artifact 用ソースが必要なら、`<body>` の中身を取り出せば戻せる
 - **GitHub への反映は、ユーザーの「mainに反映して」を待ってから `main` に直接プッシュ**する。作業用ブランチは作らない（この環境はリモートのブランチを削除できず、ユーザーの手間になる）
-- コミット者名は `soichistk-pixel`、メールは `soichistk-pixel@users.noreply.github.com`
+- コミット者は `Claude` / `noreply@anthropic.com`（v26〜。ユーザーの指示「Claudeで反映して」。GitHubで Verified 表示になる）。v25 までは `soichistk-pixel`
 - 別の会話で作られた `claude/friendly-cori-bfpn8b`（別ゲーム「Pocchari Panic」、PR #1）がある。ユーザーの指示があるまで触らない
 - BGM聴き比べラボ: https://claude.ai/artifact/G1T5qzFngAts2X3ggH3uba （ユーザーはここで曲を選び、`BGM:{...}` のコードを貼ってくる）
 
@@ -19,7 +19,7 @@
 - 頻繁に切り替わる演出（例：コンボで BGM の楽器が細かく増減する）は「エラーかと思う」ので嫌い
 - 1〜4面の難易度は「ちょうどいい」。アイテムは出現率を絞ってある（出すぎると簡単すぎる）
 
-## ゲームの構成（v25 時点）
+## ゲームの構成（v26 時点）
 - 16ビット風ドット絵。5x7 の自作ビットマップフォント。1論理px = 実画面の整数倍で描画（ドットを揃えるため）
 - 自機はドラッグで左右移動、自動連射。**慣性射撃**：移動の速さで発射方向が最大約30°傾く（`vel*0.09`、0.12 で減衰）
 - JUST（中心撃ち）/ GRAZE（ギリギリ回避）で BURST ゲージ → SODA BURST（衝撃波）
@@ -51,9 +51,18 @@
 - 保留中の案: 結果シェアボタン、ホーム画面に追加（PWA）、ステージのテーマ（5面ごとに背景）、ハードモード、自機選択
 
 ## BGM（Web Audio でその場合成、外部音源なし）
-- 通常: `{"bpm":168,"mode":"minor","prog":2,"drum":"shuffle","bass":"octave","lead":"tri","dens":"mid","arp":"chord","echo":0.45,"bright":0.7,"bassVol":0.3,"leadVol":0.9,"swing":0.06,"seed":2898}`
-- フィーバー: 通常の bpm 182 + 高速アルペジオ / ボス: prog0, seed20517, bpm180, drive / 最終ボス: prog1, seed31337, bpm188, slap16 / タイトル: bpm120 half / エンディング: bpm96 half
-- コンボ15以上でアルペジオが1段加わる（切り替えは小節頭、減るのは4小節の区切り）
+- v26〜：ユーザー作曲「MIDNIGHT MISCHIEF」（151BPM・イ短調ブルース・6声PSG・32小節）。作曲ファイルの楽譜・波形・ノイズのフィルターをそのまま `bgm` に埋め込み、16分ごとに Web Audio で演奏（前もって録音はしない）
+- 曲の形：A（Am×6→Dm→E7）/ A'（13小節目D7）/ B（B7→E7→Am×2→B7→E7→Dm→E7）/ A''
+- 場面ごとのアレンジ（同じ楽譜を変形。`ARR`）：
+  - 通常：原曲そのまま 151
+  - フィーバー：同じ曲を 166（約1割速く）。調が同じなので切れ目なくつながる
+  - ボス：フリギア旋法（B→B♭, F♯→F）＋4つ打ち、リードはノコギリ波、160。B7がナポリの和音B♭に、E7がE7♭5になる
+  - 最終ボス：ボス曲を半音上げ（B♭）＋16分ハット、172
+  - タイトル：ドリアン旋法（F→F♯）、ハーフタイムの軽いドラム、116
+  - エンディング：ミクソリディアン（C→C♯, F→F♯ でイ長調、G は残す）、96
+- 場面が変わると曲の頭から（通常⇔フィーバーは続けて演奏）
+- コンボ15以上・フィーバー・ボスで16分のアルペジオ（小節のコードの構成音）が1段加わる（切り替えは小節頭、減るのは4小節の区切り）
+- 音量：VOL 1.35（旧エンジンと同じ大きさになるよう実測で合わせた）。旧エンジン（BGM聴き比べラボの設定）は v25 まで
 
 ## 記録・ランク
 - ハイスコア `msb-best`、設定 `msb-settings`（BGM・効果音音量、振動、揺れ）
